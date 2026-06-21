@@ -1,0 +1,14 @@
+streamlit>=1.35
+Pillow>=10.0
+requests>=2.31
+rapidfuzz>=3.0
+python-dotenv>=1.0
+beautifulsoup4>=4.12
+lxml>=5.0
+# For better OCR (optional, requires tesseract installed separately):
+# pytesseract>=0.3.10
+
+# For advanced vision identification (optional, heavier):
+# torch
+# transformers
+# sentence-transformers

@@ -1,0 +1,44 @@
+name: board_game_snap
+description: Identify board games from box photos. Get rules, strategy, videos, expansions, and BGG stats.
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Camera & Media
+  image_picker: ^1.1.2
+  camera: ^0.11.0+1
+
+  # OCR / Vision (on-device)
+  google_mlkit_text_recognition: ^0.13.0
+
+  # Networking & Data
+  http: ^1.2.1
+  xml: ^6.5.0
+  cached_network_image: ^3.3.1
+
+  # UI & Utils
+  url_launcher: ^6.3.0
+  shared_preferences: ^2.2.3
+  flutter_secure_storage: ^9.2.2   # for BGG token
+  intl: ^0.19.0
+
+  # State (simple start)
+  provider: ^6.1.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true
+
+  # Add assets later if needed (game icons, etc.)
+  # assets:
+  #   - assets/images/

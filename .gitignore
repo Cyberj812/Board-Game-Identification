@@ -1,0 +1,137 @@
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual env
+.venv/
+venv/
+ENV/
+
+# Streamlit
+.streamlit/
+
+# Local cache / data
+*.db
+cache/
+__pycache__/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.pem
+
+# Flutter
+**/mobile/.dart_tool/
+**/mobile/.flutter-plugins
+**/mobile/.flutter-plugins-dependencies
+**/mobile/.packages
+**/mobile/build/
+**/mobile/.idea/
+**/mobile/*.iml
+**/mobile/android/.gradle/
+**/mobile/android/captures/
+**/mobile/ios/Flutter/.last_build_id
+**/mobile/ios/Pods/
+**/mobile/ios/.symlinks/
+**/mobile/ios/Flutter/Flutter.framework/
+**/mobile/ios/Flutter/Flutter.podspec
+**/mobile/.pub-cache/
+**/mobile/.pub/
+**/mobile/*.lock
+
+# Android
+**/mobile/android/**/*.class
+**/mobile/android/**/*.jar
+**/mobile/android/**/*.dex
+**/mobile/android/**/.cxx/
+**/mobile/android/**/GeneratedPluginRegistrant.java
+
+# iOS
+**/mobile/ios/**/*.mode1v3
+**/mobile/ios/**/*.mode2v3
+**/mobile/ios/**/*.pbxuser
+**/mobile/ios/**/*.xcuserstate
+**/mobile/ios/**/xcuserdata/
+**/mobile/ios/**/project.xcworkspace/
+**/mobile/ios/**/Pods/
+
+# Python extended
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+*.manifest
+*.spec
+
+# Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDE / Editors
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
