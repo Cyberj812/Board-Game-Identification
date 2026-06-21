@@ -137,6 +137,10 @@ source .venv/bin/activate
 streamlit run app.py
 ```
 
+## License
+
+This project is licensed under the [MIT License](LICENSE).
+
 ## Credits
 
 Built on top of the excellent data at BoardGameGeek.
