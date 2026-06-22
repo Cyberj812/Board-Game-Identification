@@ -126,6 +126,48 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Future<void> _reportBug() async {
+    const url = 'https://github.com/Cyberj812/Board-Game-Identification/issues/new?template=bug_report.md';
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open browser to report bug.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _openFeedback() async {
+    const url = 'https://github.com/Cyberj812/Board-Game-Identification/issues/new/choose';
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open browser.')),
+        );
+      }
+    }
+  }
+
+  Future<void> _suggestFeature() async {
+    const url = 'https://github.com/Cyberj812/Board-Game-Identification/issues/new?template=feature_request.md';
+    final uri = Uri.parse(url);
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not open browser to suggest a feature.')),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -139,8 +181,27 @@ class _HomePageState extends State<HomePage> {
                 context: context,
                 applicationName: 'Board Game Snap',
                 applicationVersion: '1.0.0',
-                children: const [
-                  Text('Browse games, search by name, and explore sample game details.'),
+                children: [
+                  const Text(
+                    'Identify board games from photos, search the catalog, and explore details.',
+                  ),
+                  const SizedBox(height: 16),
+                  TextButton.icon(
+                    icon: const Icon(Icons.bug_report),
+                    label: const Text('Report a Bug'),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _reportBug();
+                    },
+                  ),
+                  TextButton.icon(
+                    icon: const Icon(Icons.lightbulb_outline),
+                    label: const Text('Suggest an Improvement'),
+                    onPressed: () {
+                      Navigator.of(context).pop();
+                      _suggestFeature();
+                    },
+                  ),
                 ],
               );
             },
@@ -194,6 +255,18 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _openFeedback,
+                  icon: const Icon(Icons.feedback_outlined, size: 18),
+                  label: const Text('Report a bug or suggest improvement'),
+                  style: TextButton.styleFrom(
+                    foregroundColor: Colors.grey[700],
+                    textStyle: const TextStyle(fontSize: 12),
+                  ),
+                ),
               ),
               const SizedBox(height: 16),
               Expanded(
