@@ -28,7 +28,9 @@ jobs:
         working-directory: mobile
 
       - name: Build debug APK
-        run: flutter build apk --debug
+        run: |
+          flutter config --enable-android
+          flutter build apk --debug --android-skip-build-dependency-validation
         working-directory: mobile
 
       - name: Upload APK artifact

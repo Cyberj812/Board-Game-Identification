@@ -12,7 +12,7 @@ dependencies:
 
   # Camera & Media
   image_picker: ^1.1.2
-  camera: ^0.11.0+1
+  # camera removed (unused; image_picker handles capture)
 
   # OCR / Vision (on-device)
   google_mlkit_text_recognition: ^0.13.0
