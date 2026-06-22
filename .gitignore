@@ -92,8 +92,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Avoid broad lib/ ignore to not break Flutter's lib/ dir
+# lib/
+# lib64/
 parts/
 sdist/
 var/
