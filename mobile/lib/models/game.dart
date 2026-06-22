@@ -13,7 +13,8 @@ class Game {
   final List<String> categories;
   final List<String> mechanics;
   final List<Expansion> expansions;
-  final List<DigitalPlatform> digitalPlatforms; // New: Digital availability
+  final List<DigitalPlatform> digitalPlatforms; // Digital availability
+  List<PlayLog> playLogs; // For play logging & stats
 
   Game({
     required this.id,
@@ -31,7 +32,26 @@ class Game {
     this.mechanics = const [],
     this.expansions = const [],
     this.digitalPlatforms = const [],
-  });
+    List<PlayLog>? playLogs,
+  }) : playLogs = playLogs ?? [];
+
+  void addPlay(PlayLog log) {
+    playLogs.add(log);
+  }
+
+  int get playCount => playLogs.length;
+
+  DateTime? get lastPlayed => playLogs.isNotEmpty 
+      ? playLogs.map((p) => p.date).reduce((a, b) => a.isAfter(b) ? a : b) 
+      : null;
+
+  double? get averageRating {
+    if (playLogs.isEmpty) return null;
+    final rated = playLogs.where((p) => p.rating != null).map((p) => p.rating!);
+    if (rated.isEmpty) return null;
+    return rated.reduce((a, b) => a + b) / rated.length;
+  }
+}
 
   String get playerCount {
     if (minPlayers == 0 && maxPlayers == 0) return '?';
@@ -63,6 +83,9 @@ class Game {
       digitalPlatforms: (json['digital_platforms'] as List? ?? [])
           .map((d) => DigitalPlatform.fromJson(d))
           .toList(),
+      playLogs: (json['play_logs'] as List? ?? [])
+          .map((p) => PlayLog.fromJson(p))
+          .toList(),
     );
   }
 
@@ -77,10 +100,12 @@ class Game {
         'weight': weight,
         'rank': rank,
         'image': imageUrl,
+        'description': description,
         'categories': categories,
         'mechanics': mechanics,
         'expansions': expansions.map((e) => e.toJson()).toList(),
         'digital_platforms': digitalPlatforms.map((d) => d.toJson()).toList(),
+        'play_logs': playLogs.map((p) => p.toJson()).toList(),
       };
 }
 
@@ -108,5 +133,33 @@ class DigitalPlatform {
   Map<String, dynamic> toJson() => {
         'name': name,
         'url': url,
+      };
+}
+
+class PlayLog {
+  final DateTime date;
+  final int players;
+  final double? rating; // 1-10
+  final String? notes;
+
+  PlayLog({
+    required this.date,
+    required this.players,
+    this.rating,
+    this.notes,
+  });
+
+  factory PlayLog.fromJson(Map<String, dynamic> json) => PlayLog(
+        date: DateTime.parse(json['date']),
+        players: json['players'],
+        rating: json['rating']?.toDouble(),
+        notes: json['notes'],
+      );
+
+  Map<String, dynamic> toJson() => {
+        'date': date.toIso8601String(),
+        'players': players,
+        'rating': rating,
+        'notes': notes,
       };
 }

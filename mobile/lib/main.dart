@@ -24,9 +24,15 @@ class BoardGameSnapApp extends StatelessWidget {
     return MaterialApp(
       title: 'Board Game Snap',
       theme: ThemeData(
-        primarySwatch: Colors.blue,
+        colorSchemeSeed: Colors.deepPurple,
         useMaterial3: true,
       ),
+      darkTheme: ThemeData(
+        brightness: Brightness.dark,
+        colorSchemeSeed: Colors.deepPurple,
+        useMaterial3: true,
+      ),
+      themeMode: ThemeMode.system,
       home: const HomePage(),
     );
   }
@@ -527,6 +533,83 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _logPlay(Game game) {
+    DateTime selectedDate = DateTime.now();
+    int players = game.minPlayers > 0 ? game.minPlayers : 2;
+    double? rating;
+    String notes = '';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setStateDialog) {
+          return AlertDialog(
+            title: Text('Log Play for ${game.name}'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: const Text('Date'),
+                  subtitle: Text(selectedDate.toLocal().toString().split(' ')[0]),
+                  trailing: const Icon(Icons.calendar_today),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: selectedDate,
+                      firstDate: DateTime(2000),
+                      lastDate: DateTime.now(),
+                    );
+                    if (picked != null) {
+                      setStateDialog(() => selectedDate = picked);
+                    }
+                  },
+                ),
+                TextFormField(
+                  initialValue: players.toString(),
+                  decoration: const InputDecoration(labelText: 'Number of players'),
+                  keyboardType: TextInputType.number,
+                  onChanged: (val) => players = int.tryParse(val) ?? players,
+                ),
+                TextFormField(
+                  decoration: const InputDecoration(labelText: 'Rating (1-10, optional)'),
+                  keyboardType: TextInputType.number,
+                  onChanged: (val) => rating = double.tryParse(val),
+                ),
+                TextFormField(
+                  decoration: const InputDecoration(labelText: 'Notes (optional)'),
+                  maxLines: 2,
+                  onChanged: (val) => notes = val,
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () {
+                  final log = PlayLog(
+                    date: selectedDate,
+                    players: players,
+                    rating: rating,
+                    notes: notes.isEmpty ? null : notes,
+                  );
+                  setState(() {
+                    game.addPlay(log);
+                  });
+                  _saveCollections();
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Play logged!')),
+                  );
+                },
+                child: const Text('Log Play'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   void _showWhatShouldWePlay() {
     List<Game> selectedGames = List.from(_myCollection);
     bool useAll = _myCollection.isNotEmpty;
@@ -1015,6 +1098,22 @@ class GameDetailPage extends StatelessWidget {
 
           const SizedBox(height: 16),
 
+          // Play History
+          if (game.playCount > 0)
+            _Section(
+              title: 'Play History',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Plays: ${game.playCount}'),
+                  if (game.lastPlayed != null)
+                    Text('Last played: ${game.lastPlayed!.toLocal().toString().split(' ')[0]}'),
+                  if (game.averageRating != null)
+                    Text('Avg rating: ${game.averageRating!.toStringAsFixed(1)} / 10'),
+                ],
+              ),
+            ),
+
           // Status indicators + actions
           if (isInMyCollection)
             Container(
@@ -1070,6 +1169,18 @@ class GameDetailPage extends StatelessWidget {
             style: ElevatedButton.styleFrom(
               backgroundColor: isInWishlist ? Colors.red[700] : Colors.blue[700],
             ),
+          ),
+
+          const SizedBox(height: 12),
+
+          // Play Logging
+          ElevatedButton.icon(
+            onPressed: () {
+              // Use the game object (since objects are references in list)
+              _logPlay(game);
+            },
+            icon: const Icon(Icons.history),
+            label: const Text('Log a Play'),
           ),
 
           const SizedBox(height: 16),
@@ -1176,6 +1287,28 @@ class GameDetailPage extends StatelessWidget {
                         .map((e) => ListTile(dense: true, title: Text(e.name)))
                         .toList(),
                   ),
+          ),
+
+          // Similar Games (simple)
+          _Section(
+            title: 'Similar Games',
+            child: Column(
+              children: sampleGames
+                  .where((g) => g.id != game.id && (g.categories.any((c) => game.categories.contains(c)) || g.name != game.name))
+                  .take(3)
+                  .map((g) => ListTile(
+                        dense: true,
+                        title: Text(g.name),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(builder: (_) => GameDetailPage(game: g)),
+                          );
+                        },
+                      ))
+                  .toList(),
+            ),
           ),
 
           // How to Play Videos
