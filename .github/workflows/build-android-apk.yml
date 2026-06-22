@@ -1,0 +1,45 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: mobile
+
+      - name: Build debug APK
+        run: flutter build apk --debug
+        working-directory: mobile
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-game-snap-debug
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: v${{ github.run_number }}-debug
+          name: BoardGameSnap Debug APK (build ${{ github.run_number }})
+          draft: false
+          prerelease: true
+          files: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
