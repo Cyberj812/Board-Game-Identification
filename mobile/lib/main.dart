@@ -39,8 +39,9 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   String _searchText = '';
   bool _isScanning = false;
-  List<Game> _userCollection = []; // For custom lists and manual entries
-  bool _buildCollectionMode = false; // Toggle for collection photo building
+  List<Game> _myCollection = []; // Games I own - for choosing what to play
+  List<Game> _wishlist = [];     // Games I'm interested in buying - for shopping
+  bool _buildCollectionMode = false; // For now, keep but we won't auto-add
 
   final _picker = ImagePicker();
   final _ocr = OcrService();
@@ -54,18 +55,28 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadCollection() async {
     final prefs = await SharedPreferences.getInstance();
-    final jsonList = prefs.getStringList('userCollection') ?? [];
+    final collectionJson = prefs.getStringList('myCollection') ?? [];
+    final wishlistJson = prefs.getStringList('wishlist') ?? [];
     setState(() {
-      _userCollection = jsonList
+      _myCollection = collectionJson
+          .map((jsonStr) => Game.fromJson(jsonDecode(jsonStr)))
+          .toList();
+      _wishlist = wishlistJson
           .map((jsonStr) => Game.fromJson(jsonDecode(jsonStr)))
           .toList();
     });
   }
 
-  Future<void> _saveCollection() async {
+  Future<void> _saveCollections() async {
     final prefs = await SharedPreferences.getInstance();
-    final jsonList = _userCollection.map((g) => jsonEncode(g.toJson())).toList();
-    await prefs.setStringList('userCollection', jsonList);
+    await prefs.setStringList(
+      'myCollection',
+      _myCollection.map((g) => jsonEncode(g.toJson())).toList(),
+    );
+    await prefs.setStringList(
+      'wishlist',
+      _wishlist.map((g) => jsonEncode(g.toJson())).toList(),
+    );
   }
 
   List<Game> get _filteredGames {
@@ -119,22 +130,18 @@ class _HomePageState extends State<HomePage> {
       final fullGame = await _bgg.getGameDetails(top.id);
 
       if (fullGame != null && mounted) {
-        _addToCollection(fullGame); // Always add to collection for photo building
-        if (!_buildCollectionMode) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => GameDetailPage(
-                game: fullGame,
-                onAddToCollection: () => _addToCollection(fullGame),
-              ),
+        // Do NOT auto add. User decides in the detail view.
+        // This supports shopping (add to wishlist) and owning (add to my collection).
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => GameDetailPage(
+              game: fullGame,
+              onAddToMyCollection: () => _addToMyCollection(fullGame),
+              onAddToWishlist: () => _addToWishlist(fullGame),
             ),
-          );
-        } else {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('${fullGame.name} added to collection from photo')),
-          );
-        }
+          ),
+        );
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not fetch game details.')),
@@ -158,7 +165,8 @@ class _HomePageState extends State<HomePage> {
       MaterialPageRoute(
         builder: (_) => GameDetailPage(
           game: game,
-          onAddToCollection: () => _addToCollection(game),
+          onAddToMyCollection: () => _addToMyCollection(game),
+          onAddToWishlist: () => _addToWishlist(game),
         ),
       ),
     );
@@ -192,15 +200,27 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _addToCollection(Game game) {
+  void _addToMyCollection(Game game) {
     setState(() {
-      if (!_userCollection.any((g) => g.id == game.id)) {
-        _userCollection.add(game);
+      if (!_myCollection.any((g) => g.id == game.id)) {
+        _myCollection.add(game);
       }
     });
-    _saveCollection();
+    _saveCollections();
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${game.name} added to My Collection')),
+      SnackBar(content: Text('${game.name} added to My Collection (owned)')),
+    );
+  }
+
+  void _addToWishlist(Game game) {
+    setState(() {
+      if (!_wishlist.any((g) => g.id == game.id)) {
+        _wishlist.add(game);
+      }
+    });
+    _saveCollections();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${game.name} added to Wishlist (shopping)')),
     );
   }
 
@@ -210,9 +230,9 @@ class _HomePageState extends State<HomePage> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: const Text('My Collection'),
-            content: _userCollection.isEmpty
-                ? const Text('No games in collection yet. Scan (in Build Mode) or add manually!')
+            title: const Text('My Collection (Owned Games)'),
+            content: _myCollection.isEmpty
+                ? const Text('No games yet. Scan or add manually, then choose "I Own This".')
                 : SizedBox(
                     width: double.maxFinite,
                     child: Column(
@@ -220,9 +240,9 @@ class _HomePageState extends State<HomePage> {
                       children: [
                         ListView.builder(
                           shrinkWrap: true,
-                          itemCount: _userCollection.length,
+                          itemCount: _myCollection.length,
                           itemBuilder: (c, i) {
-                            final g = _userCollection[i];
+                            final g = _myCollection[i];
                             return ListTile(
                               title: Text(g.name),
                               subtitle: Text(g.year),
@@ -230,10 +250,10 @@ class _HomePageState extends State<HomePage> {
                                 icon: const Icon(Icons.delete),
                                 onPressed: () {
                                   setState(() {
-                                    _userCollection.removeAt(i);
+                                    _myCollection.removeAt(i);
                                   });
                                   setDialogState(() {});
-                                  _saveCollection();
+                                  _saveCollections();
                                 },
                               ),
                               onTap: () {
@@ -243,7 +263,8 @@ class _HomePageState extends State<HomePage> {
                                   MaterialPageRoute(
                                     builder: (_) => GameDetailPage(
                                       game: g,
-                                      onAddToCollection: () => _addToCollection(g),
+                                      onAddToMyCollection: () => _addToMyCollection(g),
+                                      onAddToWishlist: () => _addToWishlist(g),
                                     ),
                                   ),
                                 );
@@ -258,8 +279,7 @@ class _HomePageState extends State<HomePage> {
                             TextButton.icon(
                               onPressed: () {
                                 Navigator.pop(ctx);
-                                setState(() => _buildCollectionMode = true);
-                                _scanBox(); // Directly start scan for collection
+                                _scanBox();
                               },
                               icon: const Icon(Icons.camera_alt),
                               label: const Text('Scan More'),
@@ -276,12 +296,100 @@ class _HomePageState extends State<HomePage> {
                   ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-              if (_userCollection.isNotEmpty)
+              if (_myCollection.isNotEmpty)
                 TextButton(
                   onPressed: () {
-                    setState(() => _userCollection.clear());
+                    setState(() => _myCollection.clear());
                     setDialogState(() {});
-                    _saveCollection();
+                    _saveCollections();
+                  },
+                  child: const Text('Clear All'),
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _showWishlist() {
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('My Wishlist (Shopping)'),
+            content: _wishlist.isEmpty
+                ? const Text('No games on wishlist yet. Scan interesting games and choose "Want to Buy".')
+                : SizedBox(
+                    width: double.maxFinite,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _wishlist.length,
+                          itemBuilder: (c, i) {
+                            final g = _wishlist[i];
+                            return ListTile(
+                              title: Text(g.name),
+                              subtitle: Text(g.year),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete),
+                                onPressed: () {
+                                  setState(() {
+                                    _wishlist.removeAt(i);
+                                  });
+                                  setDialogState(() {});
+                                  _saveCollections();
+                                },
+                              ),
+                              onTap: () {
+                                Navigator.pop(ctx);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => GameDetailPage(
+                                      game: g,
+                                      onAddToMyCollection: () => _addToMyCollection(g),
+                                      onAddToWishlist: () => _addToWishlist(g),
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                _scanBox();
+                              },
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Scan More'),
+                            ),
+                            TextButton.icon(
+                              onPressed: _showManualEntry,
+                              icon: const Icon(Icons.edit),
+                              label: const Text('Manual'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+              if (_wishlist.isNotEmpty)
+                TextButton(
+                  onPressed: () {
+                    setState(() => _wishlist.clear());
+                    setDialogState(() {});
+                    _saveCollections();
                   },
                   child: const Text('Clear All'),
                 ),
@@ -320,7 +428,7 @@ class _HomePageState extends State<HomePage> {
                   year: yearController.text,
                   description: descController.text,
                 );
-                _addToCollection(manual);
+                _addToMyCollection(manual);
                 Navigator.pop(ctx);
               }
             },
@@ -342,6 +450,22 @@ class _HomePageState extends State<HomePage> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
         ],
+      ),
+    );
+  }
+
+  void _pickRandomFromMyCollection() {
+    if (_myCollection.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your collection is empty. Add some games first!')),
+      );
+      return;
+    }
+    final game = (_myCollection..shuffle()).first;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameDetailPage(game: game),
       ),
     );
   }
@@ -412,7 +536,7 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 8),
               const Text(
-                'Search the sample catalog or tap a game card to see details.',
+                'Identify games while shopping or from your collection. Add to Wishlist or My Collection.',
                 style: TextStyle(fontSize: 16),
               ),
               const SizedBox(height: 16),
@@ -451,6 +575,31 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 8),
               Center(
                 child: TextButton.icon(
+                  onPressed: _pickRandomFromMyCollection,
+                  icon: const Icon(Icons.shuffle),
+                  label: const Text('Pick Random from My Collection'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  OutlinedButton.icon(
+                    onPressed: _showCollection,
+                    icon: const Icon(Icons.collections_bookmark),
+                    label: Text('My Collection (${_myCollection.length})'),
+                  ),
+                  const SizedBox(width: 12),
+                  OutlinedButton.icon(
+                    onPressed: _showWishlist,
+                    icon: const Icon(Icons.shopping_cart),
+                    label: Text('Wishlist (${_wishlist.length})'),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton.icon(
                   onPressed: _showManualEntry,
                   icon: const Icon(Icons.edit),
                   label: const Text('Add manual entry'),
@@ -461,7 +610,7 @@ class _HomePageState extends State<HomePage> {
                 child: TextButton.icon(
                   onPressed: _showIllegalMoveChecker,
                   icon: const Icon(Icons.gavel),
-                  label: const Text('Illegal Move Checker (photo game state)'),
+                  label: const Text('Illegal Move Checker'),
                   style: TextButton.styleFrom(foregroundColor: Colors.orange),
                 ),
               ),
@@ -478,23 +627,15 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(height: 8),
-              Center(
-                child: OutlinedButton.icon(
-                  onPressed: _showCollection,
-                  icon: const Icon(Icons.list),
-                  label: Text('My Collection (${_userCollection.length})'),
-                ),
-              ),
-              const SizedBox(height: 8),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const Text('Build Collection Mode'),
+                  const Text('Collection Builder Mode'),
                   Switch(
                     value: _buildCollectionMode,
                     onChanged: (val) => setState(() => _buildCollectionMode = val),
                   ),
-                  const Text('(photo of collection)'),
+                  const Text('(scan & decide)'),
                 ],
               ),
               const SizedBox(height: 16),
@@ -519,7 +660,8 @@ class _HomePageState extends State<HomePage> {
                                 MaterialPageRoute(
                                   builder: (_) => GameDetailPage(
                                     game: game,
-                                    onAddToCollection: () => _addToCollection(game),
+                                    onAddToMyCollection: () => _addToMyCollection(game),
+                                    onAddToWishlist: () => _addToWishlist(game),
                                   ),
                                 ),
                               );
@@ -557,9 +699,15 @@ class GameCard extends StatelessWidget {
 
 class GameDetailPage extends StatelessWidget {
   final Game game;  // Now uses rich Game model from BGG
-  final VoidCallback? onAddToCollection;
+  final VoidCallback? onAddToMyCollection;
+  final VoidCallback? onAddToWishlist;
 
-  const GameDetailPage({super.key, required this.game, this.onAddToCollection});
+  const GameDetailPage({
+    super.key,
+    required this.game,
+    this.onAddToMyCollection,
+    this.onAddToWishlist,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -586,20 +734,48 @@ class GameDetailPage extends StatelessWidget {
 
           const SizedBox(height: 24),
 
-          // Add to Collection button
-          ElevatedButton.icon(
-            onPressed: () {
-              if (onAddToCollection != null) {
-                onAddToCollection!();
-              } else {
-                // Fallback for direct navigation
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('${game.name} would be added to collection')),
-                );
-              }
-            },
-            icon: const Icon(Icons.add),
-            label: const Text('Add to My Collection'),
+          // Shopping / Collection actions
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: onAddToMyCollection != null
+                      ? () {
+                          onAddToMyCollection!();
+                          Navigator.pop(context); // close detail after adding
+                        }
+                      : null,
+                  icon: const Icon(Icons.collections_bookmark),
+                  label: const Text('I Own This\n(Add to My Collection)'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.green[700],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: ElevatedButton.icon(
+                  onPressed: onAddToWishlist != null
+                      ? () {
+                          onAddToWishlist!();
+                          Navigator.pop(context);
+                        }
+                      : null,
+                  icon: const Icon(Icons.shopping_cart),
+                  label: const Text('Want to Buy\n(Add to Wishlist)'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue[700],
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Shopping: Add interesting finds to Wishlist\nCollection: Add games you own to choose what to play',
+            style: TextStyle(fontSize: 12, color: Colors.grey),
+            textAlign: TextAlign.center,
           ),
 
           const SizedBox(height: 16),
