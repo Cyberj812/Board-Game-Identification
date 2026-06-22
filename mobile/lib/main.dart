@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:confetti/confetti.dart';
 import 'package:audioplayers/audioplayers.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 import 'models/game.dart';
 import 'services/ocr_service.dart';
@@ -968,158 +969,151 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                    if (_myCollection.isNotEmpty)
-                      SwitchListTile(
-                        title: const Text('Use all from My Collection'),
-                        value: useAll,
-                        onChanged: (val) {
-                          setDialogState(() {
-                            useAll = val;
-                            if (val) {
-                              selectedGames = List.from(_myCollection);
-                            } else {
-                              selectedGames = [];
-                            }
-                          });
-                        },
-                      ),
-                    if (!useAll && _myCollection.isNotEmpty) ...[
-                      const Text('Select games:'),
-                      const SizedBox(height: 4),
-                      TextField(
-                        decoration: const InputDecoration(
-                          hintText: 'Filter games...',
-                          isDense: true,
-                          border: OutlineInputBorder(),
-                        ),
-                        onChanged: (val) => setDialogState(() => wheelSearch = val.toLowerCase()),
-                      ),
-                      const SizedBox(height: 8),
-                      Wrap(
-                        spacing: 6,
-                        children: _myCollection
-                            .where((g) => g.name.toLowerCase().contains(wheelSearch))
-                            .map((game) {
-                          final isSelected = selectedGames.contains(game);
-                          return FilterChip(
-                            label: Text(game.name),
-                            selected: isSelected,
-                            onSelected: (sel) {
-                              setDialogState(() {
-                                if (sel) {
-                                  selectedGames.add(game);
-                                } else {
-                                  selectedGames.remove(game);
-                                }
-                              });
-                            },
-                          );
-                        }).toList(),
-                      ),
-                    ],
-                    const SizedBox(height: 16),
-                    if (selectedGames.isNotEmpty && !isSpinning)
-                      ElevatedButton.icon(
-                        onPressed: () async {
-                          setDialogState(() {
-                            isSpinning = true;
-                            selectedGame = null;
-                          });
-
-                          // Spin animation
-                          final random = Random();
-                          final spins = 5 + random.nextInt(5); // 5-10 spins
-                          final targetIndex = random.nextInt(selectedGames.length);
-                          final anglePerItem = 2 * pi / selectedGames.length;
-                          final finalRotation = spins * 2 * pi + (targetIndex * anglePerItem);
-
-                          // Animate rotation
-                          for (int i = 0; i <= 30; i++) {
-                            await Future.delayed(const Duration(milliseconds: 50));
+                      if (_myCollection.isNotEmpty)
+                        SwitchListTile(
+                          title: const Text('Use all from My Collection'),
+                          value: useAll,
+                          onChanged: (val) {
                             setDialogState(() {
-                              rotation = (finalRotation * (i / 30));
+                              useAll = val;
+                              if (val) {
+                                selectedGames = List.from(_myCollection);
+                              } else {
+                                selectedGames = [];
+                              }
                             });
-                          }
-
-                          setDialogState(() {
-                            selectedGame = selectedGames[targetIndex];
-                            isSpinning = false;
-                          });
-
-                          // Play sound and confetti
-                          try {
-                            await _audioPlayer.play(AssetSource('sounds/fanfare.mp3'));
-                          } catch (_) {
-                            // Sound file not found, skip
-                          }
-                          _confettiController.play();
-
-                          // Show result for a bit
-                          await Future.delayed(const Duration(seconds: 3));
-                          if (mounted && Navigator.canPop(context)) {
-                            // Keep dialog open with result
-                          }
-                        },
-                        icon: const Icon(Icons.casino),
-                        label: const Text('Spin the Wheel!'),
-                      ),
-                    if (isSpinning || selectedGame != null) ...[
-                      const SizedBox(height: 16),
-                      _SpinningWheel(
-                        games: selectedGames,
-                        rotation: rotation,
-                        selectedGame: selectedGame,
-                      ),
-                      if (selectedGame != null) ...[
-                        const SizedBox(height: 16),
-                        Stack(
-                          alignment: Alignment.center,
-                          children: [
-                            Text(
-                              '🎉 ${selectedGame!.name} 🎉',
-                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-                              textAlign: TextAlign.center,
-                            ),
-                            ConfettiWidget(
-                              confettiController: _confettiController,
-                              blastDirectionality: BlastDirectionality.explosive,
-                              shouldLoop: false,
-                              colors: const [
-                                Colors.red,
-                                Colors.blue,
-                                Colors.green,
-                                Colors.yellow,
-                                Colors.purple,
-                              ],
-                            ),
-                          ],
+                          },
+                        ),
+                      if (!useAll && _myCollection.isNotEmpty) ...[
+                        const Text('Select games:'),
+                        const SizedBox(height: 4),
+                        TextField(
+                          decoration: const InputDecoration(
+                            hintText: 'Filter games...',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (val) => setDialogState(() => wheelSearch = val.toLowerCase()),
                         ),
                         const SizedBox(height: 8),
-                        ElevatedButton(
-                          onPressed: () {
-                            Navigator.pop(context);
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => GameDetailPage(game: selectedGame!),
-                              ),
+                        Wrap(
+                          spacing: 6,
+                          children: _myCollection
+                              .where((g) => g.name.toLowerCase().contains(wheelSearch))
+                              .map((game) {
+                            final isSelected = selectedGames.contains(game);
+                            return FilterChip(
+                              label: Text(game.name),
+                              selected: isSelected,
+                              onSelected: (sel) {
+                                setDialogState(() {
+                                  if (sel) {
+                                    selectedGames.add(game);
+                                  } else {
+                                    selectedGames.remove(game);
+                                  }
+                                });
+                              },
                             );
-                          },
-                          child: const Text('View Game Details'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            setDialogState(() {
-                              isSpinning = false;
-                              selectedGame = null;
-                              rotation = 0;
-                            });
-                          },
-                          child: const Text('Spin Again'),
+                          }).toList(),
                         ),
                       ],
+                      const SizedBox(height: 16),
+                      if (selectedGames.isNotEmpty && !isSpinning)
+                        ElevatedButton.icon(
+                          onPressed: () async {
+                            setDialogState(() {
+                              isSpinning = true;
+                              selectedGame = null;
+                            });
+
+                            // Spin animation
+                            final random = Random();
+                            final spins = 5 + random.nextInt(5);
+                            final targetIndex = random.nextInt(selectedGames.length);
+                            final anglePerItem = 2 * pi / selectedGames.length;
+                            final finalRotation = spins * 2 * pi + (targetIndex * anglePerItem);
+
+                            for (int i = 0; i <= 30; i++) {
+                              await Future.delayed(const Duration(milliseconds: 50));
+                              setDialogState(() {
+                                rotation = (finalRotation * (i / 30));
+                              });
+                            }
+
+                            setDialogState(() {
+                              selectedGame = selectedGames[targetIndex];
+                              isSpinning = false;
+                            });
+
+                            try {
+                              await _audioPlayer.play(AssetSource('sounds/fanfare.mp3'));
+                            } catch (_) {}
+                            _confettiController.play();
+
+                            await Future.delayed(const Duration(seconds: 3));
+                          },
+                          icon: const Icon(Icons.casino),
+                          label: const Text('Spin the Wheel!'),
+                        ),
+                      if (isSpinning || selectedGame != null) ...[
+                        const SizedBox(height: 16),
+                        _SpinningWheel(
+                          games: selectedGames,
+                          rotation: rotation,
+                          selectedGame: selectedGame,
+                        ),
+                        if (selectedGame != null) ...[
+                          const SizedBox(height: 16),
+                          Stack(
+                            alignment: Alignment.center,
+                            children: [
+                              Text(
+                                '🎉 ${selectedGame!.name} 🎉',
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                                textAlign: TextAlign.center,
+                              ),
+                              ConfettiWidget(
+                                confettiController: _confettiController,
+                                blastDirectionality: BlastDirectionality.explosive,
+                                shouldLoop: false,
+                                colors: const [
+                                  Colors.red,
+                                  Colors.blue,
+                                  Colors.green,
+                                  Colors.yellow,
+                                  Colors.purple,
+                                ],
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => GameDetailPage(game: selectedGame!),
+                                ),
+                              );
+                            },
+                            child: const Text('View Game Details'),
+                          ),
+                          TextButton(
+                            onPressed: () {
+                              setDialogState(() {
+                                isSpinning = false;
+                                selectedGame = null;
+                                rotation = 0;
+                              });
+                            },
+                            child: const Text('Spin Again'),
+                          ),
+                        ],
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
               actions: [
@@ -1665,14 +1659,14 @@ class GameDetailPage extends StatelessWidget {
                               onTap: () async {
                                 // Fetch full details for the expansion so we get its box art
                                 final fullExp = await BggService().getGameDetails(e.id);
-                                if (fullExp != null && mounted) {
+                                if (fullExp != null) {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
                                       builder: (_) => GameDetailPage(game: fullExp),
                                     ),
                                   );
-                                } else if (mounted) {
+                                } else {
                                   Navigator.push(
                                     context,
                                     MaterialPageRoute(
