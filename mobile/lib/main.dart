@@ -204,26 +204,36 @@ class _HomePageState extends State<HomePage> {
 
   void _addToMyCollection(Game game) {
     setState(() {
-      if (!_myCollection.any((g) => g.id == game.id)) {
+      if (_myCollection.any((g) => g.id == game.id)) {
+        _myCollection.removeWhere((g) => g.id == game.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Removed ${game.name} from My Collection')),
+        );
+      } else {
         _myCollection.add(game);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Added ${game.name} to My Collection')),
+        );
       }
     });
     _saveCollections();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${game.name} added to My Collection (owned)')),
-    );
   }
 
   void _addToWishlist(Game game) {
     setState(() {
-      if (!_wishlist.any((g) => g.id == game.id)) {
+      if (_wishlist.any((g) => g.id == game.id)) {
+        _wishlist.removeWhere((g) => g.id == game.id);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Removed ${game.name} from Wishlist')),
+        );
+      } else {
         _wishlist.add(game);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Added ${game.name} to Wishlist')),
+        );
       }
     });
     _saveCollections();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${game.name} added to Wishlist (shopping)')),
-    );
   }
 
   void _showCollection() {
@@ -830,25 +840,102 @@ class GameDetailPage extends StatelessWidget {
               ),
             ),
 
-          if (!isInMyCollection)
-            ElevatedButton.icon(
-              onPressed: onAddToMyCollection,
-              icon: const Icon(Icons.collections_bookmark),
-              label: const Text('I Own This (Add to My Collection)'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700]),
+          ElevatedButton.icon(
+            onPressed: onAddToMyCollection,
+            icon: Icon(isInMyCollection ? Icons.remove_circle : Icons.collections_bookmark),
+            label: Text(isInMyCollection ? 'Remove from My Collection' : 'I Own This (Add to My Collection)'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isInMyCollection ? Colors.red[700] : Colors.green[700],
             ),
+          ),
 
           const SizedBox(height: 8),
 
-          if (!isInWishlist)
-            ElevatedButton.icon(
-              onPressed: onAddToWishlist,
-              icon: const Icon(Icons.shopping_cart),
-              label: const Text('Want to Buy (Add to Wishlist)'),
-              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[700]),
+          ElevatedButton.icon(
+            onPressed: onAddToWishlist,
+            icon: Icon(isInWishlist ? Icons.remove_circle : Icons.shopping_cart),
+            label: Text(isInWishlist ? 'Remove from Wishlist' : 'Want to Buy (Add to Wishlist)'),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: isInWishlist ? Colors.red[700] : Colors.blue[700],
             ),
+          ),
 
           const SizedBox(height: 16),
+
+          // Quick Actions - relevant one-tap options for shopping and play
+          _Section(
+            title: 'Quick Actions',
+            child: Wrap(
+              spacing: 8,
+              runSpacing: 6,
+              children: [
+                // Collection / Wishlist (main relevant actions)
+                ActionChip(
+                  avatar: Icon(
+                    isInMyCollection ? Icons.remove_circle : Icons.add,
+                    size: 18,
+                    color: isInMyCollection ? Colors.red : Colors.green,
+                  ),
+                  label: Text(isInMyCollection ? 'Remove from Collection' : 'Add to My Collection'),
+                  onPressed: onAddToMyCollection,
+                ),
+                ActionChip(
+                  avatar: Icon(
+                    isInWishlist ? Icons.remove_circle : Icons.add,
+                    size: 18,
+                    color: isInWishlist ? Colors.red : Colors.blue,
+                  ),
+                  label: Text(isInWishlist ? 'Remove from Wishlist' : 'Add to Wishlist'),
+                  onPressed: onAddToWishlist,
+                ),
+                ActionChip(
+                  avatar: const Icon(Icons.open_in_new, size: 18),
+                  label: const Text('BGG Page'),
+                  onPressed: () => _launch('https://boardgamegeek.com/boardgame/${game.id}'),
+                ),
+                ActionChip(
+                  avatar: const Icon(Icons.play_circle, size: 18),
+                  label: const Text('How to Play'),
+                  onPressed: () {
+                    final slug = game.name.toLowerCase().replaceAll(' ', '+');
+                    _launch('https://www.youtube.com/results?search_query=how+to+play+$slug+watch+it+played');
+                  },
+                ),
+                ActionChip(
+                  avatar: const Icon(Icons.psychology, size: 18),
+                  label: const Text('Strategy Tips'),
+                  onPressed: () => _showStrategyPrompt(context, game),
+                ),
+                if (game.digitalPlatforms.isNotEmpty)
+                  ActionChip(
+                    avatar: const Icon(Icons.computer, size: 18),
+                    label: const Text('Digital Play'),
+                    onPressed: () => _launch(game.digitalPlatforms.first.url ?? 'https://boardgamegeek.com/boardgame/${game.id}'),
+                  ),
+                if (game.expansions.isNotEmpty)
+                  ActionChip(
+                    avatar: const Icon(Icons.extension, size: 18),
+                    label: Text('Expansions (${game.expansions.length})'),
+                    onPressed: () {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('See expansions section below')),
+                      );
+                    },
+                  ),
+                ActionChip(
+                  avatar: const Icon(Icons.shuffle, size: 18),
+                  label: const Text('Random from My Collection'),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Use "Pick Random from My Collection" on home screen')),
+                    );
+                  },
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 8),
 
           // Digital Play (new feature)
           if (game.digitalPlatforms.isNotEmpty)
