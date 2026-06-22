@@ -161,6 +161,7 @@ class _HomePageState extends State<HomePage> {
               isInWishlist: _wishlist.any((g) => g.id == fullGame.id),
               onAddToMyCollection: () => _addToMyCollection(fullGame),
               onAddToWishlist: () => _addToWishlist(fullGame),
+              onLogPlay: (g) => _logPlay(g),
             ),
           ),
         );
@@ -312,6 +313,7 @@ class _HomePageState extends State<HomePage> {
                                         isInMyCollection: true,
                                         onAddToMyCollection: () => _addToMyCollection(g),
                                         onAddToWishlist: () => _addToWishlist(g),
+                                        onLogPlay: (gg) => _logPlay(gg),
                                       ),
                                     ),
                                   );
@@ -1002,6 +1004,7 @@ class _HomePageState extends State<HomePage> {
                                     isInWishlist: _wishlist.any((g) => g.id == game.id),
                                     onAddToMyCollection: () => _addToMyCollection(game),
                                     onAddToWishlist: () => _addToWishlist(game),
+                                    onLogPlay: (g) => _logPlay(g),
                                   ),
                                 ),
                               );
@@ -1043,6 +1046,7 @@ class GameDetailPage extends StatelessWidget {
   final bool isInWishlist;
   final VoidCallback? onAddToMyCollection;
   final VoidCallback? onAddToWishlist;
+  final void Function(Game)? onLogPlay;
 
   const GameDetailPage({
     super.key,
@@ -1051,6 +1055,7 @@ class GameDetailPage extends StatelessWidget {
     this.isInWishlist = false,
     this.onAddToMyCollection,
     this.onAddToWishlist,
+    this.onLogPlay,
   });
 
   @override
@@ -1176,8 +1181,12 @@ class GameDetailPage extends StatelessWidget {
           // Play Logging
           ElevatedButton.icon(
             onPressed: () {
-              // Use the game object (since objects are references in list)
-              _logPlay(game);
+              if (onLogPlay != null) {
+                onLogPlay!(game);
+              } else {
+                // Fallback
+                print('Log play for ${game.name}');
+              }
             },
             icon: const Icon(Icons.history),
             label: const Text('Log a Play'),

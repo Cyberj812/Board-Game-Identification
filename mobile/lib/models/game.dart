@@ -51,7 +51,6 @@ class Game {
     if (rated.isEmpty) return null;
     return rated.reduce((a, b) => a + b) / rated.length;
   }
-}
 
   String get playerCount {
     if (minPlayers == 0 && maxPlayers == 0) return '?';
