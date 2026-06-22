@@ -35,6 +35,9 @@ dependencies:
   confetti: ^0.7.0
   audioplayers: ^6.1.0
 
+  # Typography
+  google_fonts: ^6.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

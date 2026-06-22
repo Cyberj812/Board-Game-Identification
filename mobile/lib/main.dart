@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:confetti/confetti.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'models/game.dart';
 import 'services/ocr_service.dart';
@@ -27,16 +28,88 @@ class BoardGameSnapApp extends StatelessWidget {
       theme: ThemeData(
         colorSchemeSeed: Colors.deepPurple,
         useMaterial3: true,
+        textTheme: _buildTextTheme(Brightness.light),
+        cardTheme: const CardThemeData(elevation: 3),
       ),
       darkTheme: ThemeData(
         brightness: Brightness.dark,
         colorSchemeSeed: Colors.deepPurple,
         useMaterial3: true,
+        textTheme: _buildTextTheme(Brightness.dark),
+        cardTheme: const CardThemeData(elevation: 3),
       ),
       themeMode: ThemeMode.system,
       home: const HomePage(),
     );
   }
+}
+
+// Board gamer friendly typography
+// Cinzel: premium, engraved box-title feel
+// Oswald: strong, strategic condensed sans
+// Inter: clean, highly legible body (great for rules & details)
+TextTheme _buildTextTheme(Brightness brightness) {
+  final isDark = brightness == Brightness.dark;
+  final base = isDark ? ThemeData.dark().textTheme : ThemeData.light().textTheme;
+
+  return TextTheme(
+    displayLarge: GoogleFonts.cinzel(
+      textStyle: base.displayLarge,
+      fontSize: 34,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.5,
+    ),
+    displayMedium: GoogleFonts.cinzel(
+      textStyle: base.displayMedium,
+      fontSize: 28,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 1.2,
+    ),
+    displaySmall: GoogleFonts.cinzel(
+      textStyle: base.displaySmall,
+      fontSize: 24,
+      fontWeight: FontWeight.w700,
+      letterSpacing: 0.8,
+    ),
+    headlineLarge: GoogleFonts.oswald(
+      textStyle: base.headlineLarge,
+      fontSize: 26,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.8,
+    ),
+    headlineMedium: GoogleFonts.oswald(
+      textStyle: base.headlineMedium,
+      fontSize: 22,
+      fontWeight: FontWeight.w600,
+    ),
+    titleLarge: GoogleFonts.oswald(
+      textStyle: base.titleLarge,
+      fontSize: 20,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.5,
+    ),
+    titleMedium: GoogleFonts.oswald(
+      textStyle: base.titleMedium,
+      fontSize: 16,
+      fontWeight: FontWeight.w600,
+    ),
+    bodyLarge: GoogleFonts.inter(
+      textStyle: base.bodyLarge,
+      fontSize: 15,
+      height: 1.4,
+    ),
+    bodyMedium: GoogleFonts.inter(
+      textStyle: base.bodyMedium,
+      fontSize: 14,
+      height: 1.35,
+    ),
+    labelLarge: GoogleFonts.inter(
+      textStyle: base.labelLarge,
+      fontSize: 14,
+      fontWeight: FontWeight.w600,
+      letterSpacing: 0.5,
+    ),
+  );
 }
 
 class HomePage extends StatefulWidget {
@@ -329,7 +402,7 @@ class _HomePageState extends State<HomePage> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: const Text('My Collection (Owned Games)'),
+            title: Text('My Collection (Owned Games)', style: Theme.of(context).textTheme.headlineSmall),
             content: _myCollection.isEmpty
                 ? const Text('No games yet. Scan or add manually, then choose "I Own This".')
                 : ConstrainedBox(
@@ -456,7 +529,7 @@ class _HomePageState extends State<HomePage> {
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
           return AlertDialog(
-            title: const Text('My Wishlist (Shopping)'),
+            title: Text('My Wishlist (Shopping)', style: Theme.of(context).textTheme.headlineSmall),
             content: _wishlist.isEmpty
                 ? const Text('No games on wishlist yet. Scan interesting games and choose "Want to Buy".')
                 : SizedBox(
@@ -962,14 +1035,14 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              const Text(
+              Text(
                 'Find your next board game',
-                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+                style: Theme.of(context).textTheme.headlineLarge,
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 'Identify games while shopping or from your collection. Add to Wishlist or My Collection.',
-                style: TextStyle(fontSize: 16),
+                style: Theme.of(context).textTheme.bodyMedium,
               ),
               const SizedBox(height: 16),
               TextField(
@@ -1059,9 +1132,9 @@ class _HomePageState extends State<HomePage> {
                       // BGG library results (primary game list - search the full library)
                       Row(
                         children: [
-                          const Text(
+                          Text(
                             'BoardGameGeek library',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            style: Theme.of(context).textTheme.titleMedium,
                           ),
                           if (_isSearchingBgg) ...[
                             const SizedBox(width: 8),
@@ -1131,14 +1204,22 @@ class GameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
     return Card(
+      elevation: 2,
       child: ListTile(
         onTap: onTap,
-        title: Text(game.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: Text(
+          game.name,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.titleMedium,
+        ),
         subtitle: Text(
           '${game.year} · ${game.description ?? "Board Game"}',
           maxLines: 2,
           overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall,
         ),
         trailing: const Icon(Icons.chevron_right),
       ),
@@ -1171,7 +1252,7 @@ class GameDetailPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Text(game.name, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
+          Text(game.name, style: Theme.of(context).textTheme.displaySmall),
           const SizedBox(height: 4),
           Text(game.year),
           if (isInMyCollection || isInWishlist) ...[
