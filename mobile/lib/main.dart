@@ -244,25 +244,14 @@ class _HomePageState extends State<HomePage> {
       // Get initial results from BGG search (server-side matching on the query)
       final rawResults = await _bgg.searchGames(q, limit: 25, start: 0);
 
-      // Client-side fuzzy filtering for close matches (typo tolerant, no exact-only).
+      // Use the BGG results directly (they are the relevant close matches from the library).
+      // Fuzzy is used only for augmentation decision and sorting to allow typos.
       final qLower = q.toLowerCase();
-      var closeMatches = rawResults.where((g) {
-        return _fuzzyMatch(g.name, q, maxDist: 2);
-      }).toList();
-
-      // If fuzzy too strict and no matches, fall back to all BGG raw results
-      // so searches like "Stardew Valley" still work.
-      if (closeMatches.isEmpty && rawResults.isNotEmpty) {
-        closeMatches = rawResults;
-      }
-
-      // Augment with expansions only for close-matching base.
-      List<Game> augmented = List.from(closeMatches);
-      if (closeMatches.isNotEmpty) {
-        try {
-          final top = closeMatches.first;
-          if (_fuzzyMatch(top.name, q, maxDist: 2)) {
-            final details = await _bgg.getGameDetails(top.id);
+      List<Game> augmented = List.from(rawResults);
+      for (final match in rawResults.take(3)) {
+        if (_fuzzyMatch(match.name, q, maxDist: 2)) {
+          try {
+            final details = await _bgg.getGameDetails(match.id);
             if (details != null && details.expansions.isNotEmpty) {
               for (final exp in details.expansions) {
                 if (!augmented.any((g) => g.id == exp.id) &&
@@ -271,15 +260,15 @@ class _HomePageState extends State<HomePage> {
                 }
               }
             }
-          }
-        } catch (_) {}
+          } catch (_) {}
+        }
       }
 
       // Dedup user games
       final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
       final filteredResults = augmented.where((g) => !userIds.contains(g.id)).toList();
 
-      // Sort by fuzzy distance
+      // Sort by fuzzy distance (lower = better, allows typos)
       filteredResults.sort((a, b) {
         final da = _levenshtein(a.name.toLowerCase(), qLower);
         final db = _levenshtein(b.name.toLowerCase(), qLower);
@@ -441,6 +430,14 @@ class _HomePageState extends State<HomePage> {
         if (words.isNotEmpty) {
           results = await _bgg.searchGames(words.first, limit: 5);
         }
+      }
+
+      if (results.isEmpty) {
+        // Fuzzy fallback to popular for scan to always get something relevant
+        results = _bgg.getPopularGames()
+            .where((g) => _fuzzyMatch(g.name, cleaned, maxDist: 3))
+            .take(5)
+            .toList();
       }
 
       if (results.isEmpty) {
@@ -1829,19 +1826,13 @@ Be concrete and reference actual mechanics.
 
   Future<void> _launch(String url, [BuildContext? ctx]) async {
     if (url.isEmpty) return;
+    final uri = Uri.parse(url);
     try {
-      final uri = Uri.parse(url);
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else if (ctx != null) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('Could not open browser.')),
-        );
-      }
+      await launchUrl(uri, mode: LaunchMode.externalApplication);
     } catch (e) {
       if (ctx != null) {
         ScaffoldMessenger.of(ctx).showSnackBar(
-          SnackBar(content: Text('Could not open browser')),
+          const SnackBar(content: Text('Could not open browser.')),
         );
       }
     }
@@ -1926,17 +1917,17 @@ class _SpinningWheel extends StatelessWidget {
           // Labels
           ...List.generate(games.length, (index) {
             final angle = index * anglePerItem + (anglePerItem / 2) - (rotation % (2 * pi));
-            final x = (size / 2) * 0.6 * cos(angle - pi / 2);
-            final y = (size / 2) * 0.6 * sin(angle - pi / 2);
+            final x = (size / 2) * 0.75 * cos(angle - pi / 2);
+            final y = (size / 2) * 0.75 * sin(angle - pi / 2);
             return Transform.translate(
               offset: Offset(x, y),
               child: Transform.rotate(
                 angle: angle + pi / 2,
                 child: SizedBox(
-                  width: 60,
+                  width: 70,
                   child: Text(
                     games[index].name,
-                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.bold),
                     textAlign: TextAlign.center,
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
