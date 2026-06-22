@@ -137,6 +137,8 @@ class _HomePageState extends State<HomePage> {
           MaterialPageRoute(
             builder: (_) => GameDetailPage(
               game: fullGame,
+              isInMyCollection: _myCollection.any((g) => g.id == fullGame.id),
+              isInWishlist: _wishlist.any((g) => g.id == fullGame.id),
               onAddToMyCollection: () => _addToMyCollection(fullGame),
               onAddToWishlist: () => _addToWishlist(fullGame),
             ),
@@ -238,37 +240,53 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Search inside collection
+                        TextField(
+                          decoration: const InputDecoration(
+                            hintText: 'Search collection...',
+                            prefixIcon: Icon(Icons.search, size: 20),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                          ),
+                          onChanged: (val) => setDialogState(() {}),
+                        ),
+                        const SizedBox(height: 8),
                         ListView.builder(
                           shrinkWrap: true,
                           itemCount: _myCollection.length,
                           itemBuilder: (c, i) {
                             final g = _myCollection[i];
-                            return ListTile(
-                              title: Text(g.name),
-                              subtitle: Text(g.year),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete),
-                                onPressed: () {
-                                  setState(() {
-                                    _myCollection.removeAt(i);
-                                  });
-                                  setDialogState(() {});
-                                  _saveCollections();
+                            return Card(
+                              child: ListTile(
+                                leading: const Icon(Icons.casino, size: 28),
+                                title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Text('${g.year} • ${g.playerCount} players • ${g.weightString}'),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                  onPressed: () {
+                                    setState(() {
+                                      _myCollection.removeAt(i);
+                                    });
+                                    setDialogState(() {});
+                                    _saveCollections();
+                                  },
+                                ),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => GameDetailPage(
+                                        game: g,
+                                        isInMyCollection: true,
+                                        onAddToMyCollection: () => _addToMyCollection(g),
+                                        onAddToWishlist: () => _addToWishlist(g),
+                                      ),
+                                    ),
+                                  );
                                 },
                               ),
-                              onTap: () {
-                                Navigator.pop(ctx);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => GameDetailPage(
-                                      game: g,
-                                      onAddToMyCollection: () => _addToMyCollection(g),
-                                      onAddToWishlist: () => _addToWishlist(g),
-                                    ),
-                                  ),
-                                );
-                              },
                             );
                           },
                         ),
@@ -326,37 +344,52 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        // Search inside wishlist
+                        TextField(
+                          decoration: const InputDecoration(
+                            hintText: 'Search wishlist...',
+                            prefixIcon: Icon(Icons.search, size: 20),
+                            border: OutlineInputBorder(),
+                            isDense: true,
+                            contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
+                          ),
+                          onChanged: (val) => setDialogState(() {}),
+                        ),
+                        const SizedBox(height: 8),
                         ListView.builder(
                           shrinkWrap: true,
                           itemCount: _wishlist.length,
                           itemBuilder: (c, i) {
                             final g = _wishlist[i];
-                            return ListTile(
-                              title: Text(g.name),
-                              subtitle: Text(g.year),
-                              trailing: IconButton(
-                                icon: const Icon(Icons.delete),
-                                onPressed: () {
-                                  setState(() {
-                                    _wishlist.removeAt(i);
-                                  });
-                                  setDialogState(() {});
-                                  _saveCollections();
+                            return Card(
+                              child: ListTile(
+                                leading: const Icon(Icons.shopping_cart, size: 28),
+                                title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                subtitle: Text(g.year),
+                                trailing: IconButton(
+                                  icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                  onPressed: () {
+                                    setState(() {
+                                      _wishlist.removeAt(i);
+                                    });
+                                    setDialogState(() {});
+                                    _saveCollections();
+                                  },
+                                ),
+                                onTap: () {
+                                  Navigator.pop(ctx);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => GameDetailPage(
+                                        game: g,
+                                        onAddToMyCollection: () => _addToMyCollection(g),
+                                        onAddToWishlist: () => _addToWishlist(g),
+                                      ),
+                                    ),
+                                  );
                                 },
                               ),
-                              onTap: () {
-                                Navigator.pop(ctx);
-                                Navigator.push(
-                                  context,
-                                  MaterialPageRoute(
-                                    builder: (_) => GameDetailPage(
-                                      game: g,
-                                      onAddToMyCollection: () => _addToMyCollection(g),
-                                      onAddToWishlist: () => _addToWishlist(g),
-                                    ),
-                                  ),
-                                );
-                              },
                             );
                           },
                         ),
@@ -660,6 +693,8 @@ class _HomePageState extends State<HomePage> {
                                 MaterialPageRoute(
                                   builder: (_) => GameDetailPage(
                                     game: game,
+                                    isInMyCollection: _myCollection.any((g) => g.id == game.id),
+                                    isInWishlist: _wishlist.any((g) => g.id == game.id),
                                     onAddToMyCollection: () => _addToMyCollection(game),
                                     onAddToWishlist: () => _addToWishlist(game),
                                   ),
@@ -698,13 +733,17 @@ class GameCard extends StatelessWidget {
 }
 
 class GameDetailPage extends StatelessWidget {
-  final Game game;  // Now uses rich Game model from BGG
+  final Game game;
+  final bool isInMyCollection;
+  final bool isInWishlist;
   final VoidCallback? onAddToMyCollection;
   final VoidCallback? onAddToWishlist;
 
   const GameDetailPage({
     super.key,
     required this.game,
+    this.isInMyCollection = false,
+    this.isInWishlist = false,
     this.onAddToMyCollection,
     this.onAddToWishlist,
   });
@@ -719,6 +758,26 @@ class GameDetailPage extends StatelessWidget {
           Text(game.name, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
           const SizedBox(height: 4),
           Text(game.year),
+          if (isInMyCollection || isInWishlist) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              children: [
+                if (isInMyCollection)
+                  Chip(
+                    label: const Text('In My Collection'),
+                    avatar: const Icon(Icons.collections_bookmark, size: 16),
+                    backgroundColor: Colors.green.shade100,
+                  ),
+                if (isInWishlist)
+                  Chip(
+                    label: const Text('On Wishlist'),
+                    avatar: const Icon(Icons.shopping_cart, size: 16),
+                    backgroundColor: Colors.blue.shade100,
+                  ),
+              ],
+            ),
+          ],
           const SizedBox(height: 16),
 
           // Stats
@@ -732,51 +791,62 @@ class GameDetailPage extends StatelessWidget {
             ],
           ),
 
-          const SizedBox(height: 24),
+          const SizedBox(height: 16),
 
-          // Shopping / Collection actions
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: onAddToMyCollection != null
-                      ? () {
-                          onAddToMyCollection!();
-                          Navigator.pop(context); // close detail after adding
-                        }
-                      : null,
-                  icon: const Icon(Icons.collections_bookmark),
-                  label: const Text('I Own This\n(Add to My Collection)'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green[700],
-                  ),
-                ),
+          // Status indicators + actions
+          if (isInMyCollection)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade200),
               ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: onAddToWishlist != null
-                      ? () {
-                          onAddToWishlist!();
-                          Navigator.pop(context);
-                        }
-                      : null,
-                  icon: const Icon(Icons.shopping_cart),
-                  label: const Text('Want to Buy\n(Add to Wishlist)'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.blue[700],
-                  ),
-                ),
+              child: const Row(
+                children: [
+                  Icon(Icons.collections_bookmark, color: Colors.green, size: 18),
+                  SizedBox(width: 8),
+                  Text('Already in your collection', style: TextStyle(color: Colors.green)),
+                ],
               ),
-            ],
-          ),
+            ),
+
+          if (isInWishlist)
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              margin: const EdgeInsets.only(bottom: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.shopping_cart, color: Colors.blue, size: 18),
+                  SizedBox(width: 8),
+                  Text('Already on your wishlist', style: TextStyle(color: Colors.blue)),
+                ],
+              ),
+            ),
+
+          if (!isInMyCollection)
+            ElevatedButton.icon(
+              onPressed: onAddToMyCollection,
+              icon: const Icon(Icons.collections_bookmark),
+              label: const Text('I Own This (Add to My Collection)'),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.green[700]),
+            ),
+
           const SizedBox(height: 8),
-          const Text(
-            'Shopping: Add interesting finds to Wishlist\nCollection: Add games you own to choose what to play',
-            style: TextStyle(fontSize: 12, color: Colors.grey),
-            textAlign: TextAlign.center,
-          ),
+
+          if (!isInWishlist)
+            ElevatedButton.icon(
+              onPressed: onAddToWishlist,
+              icon: const Icon(Icons.shopping_cart),
+              label: const Text('Want to Buy (Add to Wishlist)'),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blue[700]),
+            ),
 
           const SizedBox(height: 16),
 
