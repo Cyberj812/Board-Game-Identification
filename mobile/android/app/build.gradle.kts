@@ -34,18 +34,26 @@ android {
         versionName = flutter.versionName
     }
 
-    signingConfigs {
-        create("release") {
-            keyAlias = keystoreProperties["keyAlias"] as String
-            keyPassword = keystoreProperties["keyPassword"] as String
-            storeFile = file(keystoreProperties["storeFile"] as String)
-            storePassword = keystoreProperties["storePassword"] as String
-        }
-    }
+    // Only configure release signing when a local key.properties is present.
+    // This file is gitignored so CI (which builds debug) and other machines won't fail here.
+    val hasKeystoreConfig = keystorePropertiesFile.exists() &&
+        keystoreProperties.getProperty("keyAlias") != null &&
+        keystoreProperties.getProperty("storeFile") != null
 
-    buildTypes {
-        release {
-            signingConfig = signingConfigs.getByName("release")
+    if (hasKeystoreConfig) {
+        signingConfigs {
+            create("release") {
+                keyAlias = keystoreProperties.getProperty("keyAlias")!!
+                keyPassword = keystoreProperties.getProperty("keyPassword") ?: ""
+                storeFile = file(keystoreProperties.getProperty("storeFile")!!)
+                storePassword = keystoreProperties.getProperty("storePassword") ?: ""
+            }
+        }
+
+        buildTypes {
+            release {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }
