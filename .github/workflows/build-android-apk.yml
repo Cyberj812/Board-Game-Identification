@@ -8,6 +8,9 @@ on:
 jobs:
   build-apk:
     runs-on: ubuntu-latest
+    env:
+      # Suppress Node 20 deprecation warnings for current action versions
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
