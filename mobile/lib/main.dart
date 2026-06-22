@@ -340,88 +340,84 @@ class _HomePageState extends State<HomePage> {
             title: const Text('My Collection (Owned Games)'),
             content: _myCollection.isEmpty
                 ? const Text('No games yet. Scan or add manually, then choose "I Own This".')
-                : SizedBox(
-                    width: double.maxFinite,
+                : ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.65),
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Search inside collection (actually filters)
-                        Builder(builder: (context) {
-                          String searchQuery = '';
-                          return StatefulBuilder(
-                            builder: (context, setInnerState) {
-                              final filtered = searchQuery.isEmpty
-                                  ? _myCollection
-                                  : _myCollection.where((g) =>
-                                      g.name.toLowerCase().contains(searchQuery) ||
-                                      (g.description ?? '').toLowerCase().contains(searchQuery)).toList();
-                              return Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  TextField(
-                                    decoration: const InputDecoration(
-                                      hintText: 'Search collection...',
-                                      prefixIcon: Icon(Icons.search, size: 20),
-                                      border: OutlineInputBorder(),
-                                      isDense: true,
-                                      contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                                    ),
-                                    onChanged: (val) {
-                                      searchQuery = val.toLowerCase();
-                                      setInnerState(() {});
-                                    },
+                        // Search inside collection
+                        StatefulBuilder(
+                          builder: (context, setInnerState) {
+                            String searchQuery = '';
+                            final filtered = searchQuery.isEmpty
+                                ? _myCollection
+                                : _myCollection.where((g) =>
+                                    g.name.toLowerCase().contains(searchQuery) ||
+                                    (g.description ?? '').toLowerCase().contains(searchQuery)).toList();
+                            return Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                TextField(
+                                  decoration: const InputDecoration(
+                                    hintText: 'Search collection...',
+                                    prefixIcon: Icon(Icons.search, size: 20),
+                                    border: OutlineInputBorder(),
+                                    isDense: true,
+                                    contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                                   ),
-                                  const SizedBox(height: 8),
-                                  ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxHeight: MediaQuery.of(context).size.height * 0.45,
-                                    ),
-                                    child: ListView.builder(
-                                      shrinkWrap: true,
-                                      itemCount: filtered.length,
-                                      itemBuilder: (c, i) {
-                                        final g = filtered[i];
-                                        return Card(
-                                          child: ListTile(
-                                            leading: const Icon(Icons.casino, size: 28),
-                                            title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                            subtitle: Text('${g.year} • ${g.playerCount} players • ${g.weightString}'),
-                                            trailing: IconButton(
-                                              icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                              onPressed: () {
-                                                setState(() {
-                                                  _myCollection.removeWhere((x) => x.id == g.id);
-                                                });
-                                                setDialogState(() {});
-                                                setInnerState(() {});
-                                                _saveCollections();
-                                              },
-                                            ),
-                                            onTap: () {
-                                              Navigator.pop(ctx);
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (_) => GameDetailPage(
-                                                    game: g,
-                                                    isInMyCollection: true,
-                                                    onAddToMyCollection: () => _addToMyCollection(g),
-                                                    onAddToWishlist: () => _addToWishlist(g),
-                                                    onLogPlay: (gg) => _logPlay(gg),
-                                                  ),
-                                                ),
-                                              );
+                                  onChanged: (val) {
+                                    searchQuery = val.toLowerCase();
+                                    setInnerState(() {});
+                                  },
+                                ),
+                                const SizedBox(height: 8),
+                                ConstrainedBox(
+                                  constraints: BoxConstraints(maxHeight: 300),
+                                  child: ListView.builder(
+                                    shrinkWrap: true,
+                                    itemCount: filtered.length,
+                                    itemBuilder: (c, i) {
+                                      final g = filtered[i];
+                                      return Card(
+                                        child: ListTile(
+                                          leading: const Icon(Icons.casino, size: 28),
+                                          title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                          subtitle: Text('${g.year} • ${g.playerCount} players • ${g.weightString}'),
+                                          trailing: IconButton(
+                                            icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                            onPressed: () {
+                                              setState(() {
+                                                _myCollection.removeWhere((x) => x.id == g.id);
+                                              });
+                                              setDialogState(() {});
+                                              setInnerState(() {});
+                                              _saveCollections();
                                             },
                                           ),
-                                        );
-                                      },
-                                    ),
+                                          onTap: () {
+                                            Navigator.pop(ctx);
+                                            Navigator.push(
+                                              context,
+                                              MaterialPageRoute(
+                                                builder: (_) => GameDetailPage(
+                                                  game: g,
+                                                  isInMyCollection: true,
+                                                  onAddToMyCollection: () => _addToMyCollection(g),
+                                                  onAddToWishlist: () => _addToWishlist(g),
+                                                  onLogPlay: (gg) => _logPlay(gg),
+                                                ),
+                                              ),
+                                            );
+                                          },
+                                        ),
+                                      );
+                                    },
                                   ),
-                                ],
-                              );
-                            },
-                          );
-                        }),
+                                ),
+                              ],
+                            );
+                          },
+                        ),
                         const SizedBox(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -995,6 +991,12 @@ class _HomePageState extends State<HomePage> {
                     _searchText = value;
                   });
                   _searchDebounce?.cancel();
+                  if (value.trim().length >= 2) {
+                    setState(() {
+                      _isSearchingBgg = true;
+                      _bggSearchResults = [];
+                    });
+                  }
                   _searchDebounce = Timer(const Duration(milliseconds: 400), () {
                     _searchBggLibrary(value);
                   });
@@ -1019,14 +1021,6 @@ class _HomePageState extends State<HomePage> {
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _pickRandomFromMyCollection,
-                  icon: const Icon(Icons.shuffle),
-                  label: const Text('Pick Random from My Collection'),
-                ),
               ),
               const SizedBox(height: 8),
               Center(
@@ -1063,39 +1057,6 @@ class _HomePageState extends State<HomePage> {
                   icon: const Icon(Icons.edit),
                   label: const Text('Add manual entry'),
                 ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _showIllegalMoveChecker,
-                  icon: const Icon(Icons.gavel),
-                  label: const Text('Illegal Move Checker'),
-                  style: TextButton.styleFrom(foregroundColor: Colors.orange),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _openFeedback,
-                  icon: const Icon(Icons.feedback_outlined, size: 18),
-                  label: const Text('Report a bug or suggest improvement'),
-                  style: TextButton.styleFrom(
-                    foregroundColor: Colors.grey[700],
-                    textStyle: const TextStyle(fontSize: 12),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const Text('Collection Builder Mode'),
-                  Switch(
-                    value: _buildCollectionMode,
-                    onChanged: (val) => setState(() => _buildCollectionMode = val),
-                  ),
-                  const Text('(scan & decide)'),
-                ],
               ),
               const SizedBox(height: 16),
               Expanded(
@@ -1143,7 +1104,16 @@ class _HomePageState extends State<HomePage> {
                       ),
                       const SizedBox(height: 8),
 
-                      if (_bggSearchResults.isEmpty && !_isSearchingBgg && _searchText.trim().length >= 2)
+                      if (_isSearchingBgg)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 8),
+                          child: Text(
+                            'Searching BoardGameGeek...',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      else if (_bggSearchResults.isEmpty && _searchText.trim().length >= 2)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: Text(
@@ -1151,7 +1121,7 @@ class _HomePageState extends State<HomePage> {
                             textAlign: TextAlign.center,
                           ),
                         )
-                      else if (_bggSearchResults.isEmpty && !_isSearchingBgg)
+                      else if (_bggSearchResults.isEmpty)
                         const Padding(
                           padding: EdgeInsets.symmetric(vertical: 12),
                           child: Text(
