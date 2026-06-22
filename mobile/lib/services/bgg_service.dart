@@ -22,26 +22,62 @@ class BggService {
   Future<List<Game>> searchGames(String query, {int limit = 10, int start = 0}) async {
     if (query.trim().length < 2) return [];
 
+    // Build URI. Note: BGG /search pagination with start is unreliable; we still pass it for forward compat.
     final uri = Uri.parse('$_base/search?query=${Uri.encodeComponent(query)}&type=boardgame&start=$start');
-    final resp = await http.get(uri, headers: _headers);
 
-    if (resp.statusCode != 200) {
-      // Fallback to popular if blocked
-      final fallback = _popularGames.where((g) => g.name.toLowerCase().contains(query.toLowerCase())).toList();
-      return fallback.skip(start).take(limit).toList();
+    http.Response resp;
+    try {
+      resp = await http.get(uri, headers: _headers);
+    } catch (_) {
+      return [];
     }
 
-    final document = XmlDocument.parse(resp.body);
+    // BGG often returns 202 "Accepted" (processing). Retry once after a short delay.
+    if (resp.statusCode == 202) {
+      await Future.delayed(const Duration(milliseconds: 1500));
+      try {
+        resp = await http.get(uri, headers: _headers);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    // Always attempt to parse if we have a body. Some non-200 responses still contain useful data.
+    if (resp.body.isNotEmpty) {
+      try {
+        final parsed = _parseSearchResults(resp.body, limit);
+        if (parsed.isNotEmpty) {
+          return parsed;
+        }
+      } catch (_) {
+        // fall through to empty
+      }
+    }
+
+    // No usable BGG results. Return empty (do NOT pollute the library search with the tiny popular list).
+    return [];
+  }
+
+  List<Game> _parseSearchResults(String body, int limit) {
+    final document = XmlDocument.parse(body);
     final items = document.findAllElements('item');
 
     final results = <Game>[];
     for (final item in items.take(limit)) {
       final id = item.getAttribute('id') ?? '';
-      final nameEl = item.findElements('name').firstWhere(
-            (e) => e.getAttribute('type') == 'primary' || true,
-            orElse: () => item.findElements('name').first,
-          );
-      final name = nameEl.getAttribute('value') ?? 'Unknown';
+      if (id.isEmpty) continue;
+
+      // Prefer primary name, fall back to first name
+      final nameEls = item.findElements('name').toList();
+      String name = 'Unknown';
+      if (nameEls.isNotEmpty) {
+        final primary = nameEls.firstWhere(
+          (e) => e.getAttribute('type') == 'primary',
+          orElse: () => nameEls.first,
+        );
+        name = primary.getAttribute('value') ?? 'Unknown';
+      }
+
       final yearEl = item.findElements('yearpublished').firstOrNull;
       final year = yearEl?.getAttribute('value') ?? '';
 

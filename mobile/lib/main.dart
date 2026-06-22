@@ -328,8 +328,8 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      // Get initial results from BGG search
-      final rawResults = await _bgg.searchGames(q, limit: 25, start: 0);
+      // Get initial results from BGG search. Ask for a larger batch so we have headroom for client filters + expansions.
+      final rawResults = await _bgg.searchGames(q, limit: 75, start: 0);
 
       // Enrich ALL results so filters (weight/rating/players) can be applied reliably
       final enriched = await _enrichGames(rawResults);
@@ -359,14 +359,15 @@ class _HomePageState extends State<HomePage> {
           .where((g) => !userIds.contains(g.id) && _matchesFilters(g))
           .toList();
 
-      // Cap first page at 25
+      // Show first 25 (client-side page), but keep any extra from the larger fetch for potential immediate use.
       final limited = filtered.take(25).toList();
 
       if (mounted) {
         setState(() {
           _bggSearchResults = limited;
           _searchStart = 0;
-          _hasMoreResults = rawResults.length == 25;
+          // If BGG gave us a healthy batch, offer "Load more" (pagination via start is best-effort).
+          _hasMoreResults = rawResults.length >= 25;
         });
       }
     } catch (_) {
@@ -401,24 +402,22 @@ class _HomePageState extends State<HomePage> {
         // Enrich for filter data (players/weight/rating)
         final enrichedMore = await _enrichGames(moreRaw);
 
-        // Filter new candidates: not already shown, not user-owned, match current text loosely + active filters
-        final qLower = q.toLowerCase();
+        // Accept what BGG returned for the page (BGG already matched the query).
+        // Only filter: not user-owned, not already in current results, and pass active filters.
         final newCandidates = enrichedMore.where((g) {
           if (userIds.contains(g.id)) return false;
           if (_bggSearchResults.any((e) => e.id == g.id)) return false;
-          if (!_matchesFilters(g)) return false;
-          // keep reasonable match to query
-          return g.name.toLowerCase().contains(qLower) || _fuzzyMatch(g.name, q, maxDist: 2);
+          return _matchesFilters(g);
         }).toList();
 
-        // Optionally pull expansions for the first new one if it matches
+        // Optionally pull expansions for the first new result (helps surface Catan expansions etc. on later pages)
         List<Game> toAdd = List.from(newCandidates);
         if (newCandidates.isNotEmpty) {
           try {
             final topNew = newCandidates.first;
-            if (topNew.expansions.isEmpty && _fuzzyMatch(topNew.name, q, maxDist: 2)) {
+            if (topNew.expansions.isEmpty) {
               final details = await _bgg.getGameDetails(topNew.id);
-              if (details != null) {
+              if (details != null && details.expansions.isNotEmpty) {
                 for (final exp in details.expansions) {
                   if (!toAdd.any((g) => g.id == exp.id) &&
                       !_bggSearchResults.any((e) => e.id == exp.id) &&
