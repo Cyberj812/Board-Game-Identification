@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:async';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -52,6 +53,11 @@ class _HomePageState extends State<HomePage> {
   List<Game> _wishlist = [];     // Games I'm interested in buying - for shopping
   bool _buildCollectionMode = false; // For now, keep but we won't auto-add
 
+  // BGG library search
+  Timer? _searchDebounce;
+  List<Game> _bggSearchResults = [];
+  bool _isSearchingBgg = false;
+
   final _picker = ImagePicker();
   final _ocr = OcrService();
   final _bgg = BggService();
@@ -64,10 +70,13 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _loadCollection();
     _confettiController = ConfettiController(duration: const Duration(seconds: 2));
+    // Start with popular BGG games in the library view
+    _bggSearchResults = _bgg.getPopularGames();
   }
 
   @override
   void dispose() {
+    _searchDebounce?.cancel();
     _confettiController.dispose();
     _audioPlayer.dispose();
     super.dispose();
@@ -99,15 +108,76 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  List<Game> get _filteredGames {
-    final query = _searchText.toLowerCase();
-    if (query.isEmpty) {
-      return sampleGames;
+  List<Game> get _localMatches {
+    final q = _searchText.toLowerCase().trim();
+    final userGames = <Game>[..._myCollection, ..._wishlist];
+    if (q.isEmpty) return userGames;
+    return userGames.where((g) =>
+      g.name.toLowerCase().contains(q) ||
+      (g.description ?? '').toLowerCase().contains(q)
+    ).toList();
+  }
+
+  Future<void> _searchBggLibrary(String query) async {
+    final q = query.trim();
+    if (q.length < 2) {
+      setState(() {
+        _bggSearchResults = _bgg.getPopularGames();
+        _isSearchingBgg = false;
+      });
+      return;
     }
-    return sampleGames.where((game) {
-      return game.name.toLowerCase().contains(query) ||
-          (game.description ?? '').toLowerCase().contains(query);
-    }).toList();
+
+    setState(() => _isSearchingBgg = true);
+
+    try {
+      final results = await _bgg.searchGames(q, limit: 15);
+
+      // Remove any that are already in user's collection/wishlist
+      final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
+      final filteredResults = results.where((g) => !userIds.contains(g.id)).toList();
+
+      if (mounted) {
+        setState(() {
+          _bggSearchResults = filteredResults;
+        });
+      }
+    } catch (_) {
+      // keep previous results or popular on error
+    } finally {
+      if (mounted) {
+        setState(() => _isSearchingBgg = false);
+      }
+    }
+  }
+
+  Future<void> _viewGame(Game partialGame) async {
+    Game gameToShow = partialGame;
+
+    // If it looks like a minimal BGG result (no description/stats), fetch full details
+    final isMinimal = partialGame.description == null && partialGame.minPlayers == 0 && partialGame.rank == null;
+    if (isMinimal && partialGame.id.isNotEmpty && !partialGame.id.startsWith('manual_')) {
+      final full = await _bgg.getGameDetails(partialGame.id);
+      if (full != null) {
+        gameToShow = full;
+      }
+    }
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => GameDetailPage(
+          game: gameToShow,
+          isInMyCollection: _myCollection.any((g) => g.id == gameToShow.id),
+          isInWishlist: _wishlist.any((g) => g.id == gameToShow.id),
+          onAddToMyCollection: () => _addToMyCollection(gameToShow),
+          onAddToWishlist: () => _addToWishlist(gameToShow),
+          onLogPlay: (g) => _logPlay(g),
+        ),
+      ),
+    );
   }
 
   Future<void> _scanBox() async {
@@ -182,7 +252,11 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showRandomGame() {
-    final game = (sampleGames..shuffle()).first;
+    final pool = _myCollection.isNotEmpty 
+        ? _myCollection 
+        : _bgg.getPopularGames();
+    if (pool.isEmpty) return;
+    final game = (List.from(pool)..shuffle()).first;
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -271,57 +345,83 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Search inside collection
-                        TextField(
-                          decoration: const InputDecoration(
-                            hintText: 'Search collection...',
-                            prefixIcon: Icon(Icons.search, size: 20),
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                            contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                          ),
-                          onChanged: (val) => setDialogState(() {}),
-                        ),
-                        const SizedBox(height: 8),
-                        ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: _myCollection.length,
-                          itemBuilder: (c, i) {
-                            final g = _myCollection[i];
-                            return Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.casino, size: 28),
-                                title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                subtitle: Text('${g.year} • ${g.playerCount} players • ${g.weightString}'),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                  onPressed: () {
-                                    setState(() {
-                                      _myCollection.removeAt(i);
-                                    });
-                                    setDialogState(() {});
-                                    _saveCollections();
-                                  },
-                                ),
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => GameDetailPage(
-                                        game: g,
-                                        isInMyCollection: true,
-                                        onAddToMyCollection: () => _addToMyCollection(g),
-                                        onAddToWishlist: () => _addToWishlist(g),
-                                        onLogPlay: (gg) => _logPlay(gg),
-                                      ),
+                        // Search inside collection (actually filters)
+                        Builder(builder: (context) {
+                          String searchQuery = '';
+                          return StatefulBuilder(
+                            builder: (context, setInnerState) {
+                              final filtered = searchQuery.isEmpty
+                                  ? _myCollection
+                                  : _myCollection.where((g) =>
+                                      g.name.toLowerCase().contains(searchQuery) ||
+                                      (g.description ?? '').toLowerCase().contains(searchQuery)).toList();
+                              return Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  TextField(
+                                    decoration: const InputDecoration(
+                                      hintText: 'Search collection...',
+                                      prefixIcon: Icon(Icons.search, size: 20),
+                                      border: OutlineInputBorder(),
+                                      isDense: true,
+                                      contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                                     ),
-                                  );
-                                },
-                              ),
-                            );
-                          },
-                        ),
+                                    onChanged: (val) {
+                                      searchQuery = val.toLowerCase();
+                                      setInnerState(() {});
+                                    },
+                                  ),
+                                  const SizedBox(height: 8),
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxHeight: MediaQuery.of(context).size.height * 0.45,
+                                    ),
+                                    child: ListView.builder(
+                                      shrinkWrap: true,
+                                      itemCount: filtered.length,
+                                      itemBuilder: (c, i) {
+                                        final g = filtered[i];
+                                        return Card(
+                                          child: ListTile(
+                                            leading: const Icon(Icons.casino, size: 28),
+                                            title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                            subtitle: Text('${g.year} • ${g.playerCount} players • ${g.weightString}'),
+                                            trailing: IconButton(
+                                              icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                              onPressed: () {
+                                                setState(() {
+                                                  _myCollection.removeWhere((x) => x.id == g.id);
+                                                });
+                                                setDialogState(() {});
+                                                setInnerState(() {});
+                                                _saveCollections();
+                                              },
+                                            ),
+                                            onTap: () {
+                                              Navigator.pop(ctx);
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (_) => GameDetailPage(
+                                                    game: g,
+                                                    isInMyCollection: true,
+                                                    onAddToMyCollection: () => _addToMyCollection(g),
+                                                    onAddToWishlist: () => _addToWishlist(g),
+                                                    onLogPlay: (gg) => _logPlay(gg),
+                                                  ),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        );
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              );
+                            },
+                          );
+                        }),
                         const SizedBox(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -376,55 +476,70 @@ class _HomePageState extends State<HomePage> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Search inside wishlist
-                        TextField(
-                          decoration: const InputDecoration(
-                            hintText: 'Search wishlist...',
-                            prefixIcon: Icon(Icons.search, size: 20),
-                            border: OutlineInputBorder(),
-                            isDense: true,
-                            contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
-                          ),
-                          onChanged: (val) => setDialogState(() {}),
-                        ),
-                        const SizedBox(height: 8),
-                        ListView.builder(
-                          shrinkWrap: true,
-                          itemCount: _wishlist.length,
-                          itemBuilder: (c, i) {
-                            final g = _wishlist[i];
-                            return Card(
-                              child: ListTile(
-                                leading: const Icon(Icons.shopping_cart, size: 28),
-                                title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                subtitle: Text(g.year),
-                                trailing: IconButton(
-                                  icon: const Icon(Icons.delete, color: Colors.redAccent),
-                                  onPressed: () {
-                                    setState(() {
-                                      _wishlist.removeAt(i);
-                                    });
-                                    setDialogState(() {});
-                                    _saveCollections();
-                                  },
+                        // Search inside wishlist (functional + constrained to avoid overflow)
+                        Builder(builder: (context) {
+                          String searchQuery = '';
+                          return StatefulBuilder(builder: (context, setInner) {
+                            final filtered = searchQuery.isEmpty
+                                ? _wishlist
+                                : _wishlist.where((g) => g.name.toLowerCase().contains(searchQuery)).toList();
+                            return Column(mainAxisSize: MainAxisSize.min, children: [
+                              TextField(
+                                decoration: const InputDecoration(
+                                  hintText: 'Search wishlist...',
+                                  prefixIcon: Icon(Icons.search, size: 20),
+                                  border: OutlineInputBorder(),
+                                  isDense: true,
+                                  contentPadding: EdgeInsets.symmetric(vertical: 8, horizontal: 8),
                                 ),
-                                onTap: () {
-                                  Navigator.pop(ctx);
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (_) => GameDetailPage(
-                                        game: g,
-                                        onAddToMyCollection: () => _addToMyCollection(g),
-                                        onAddToWishlist: () => _addToWishlist(g),
-                                      ),
-                                    ),
-                                  );
+                                onChanged: (val) {
+                                  searchQuery = val.toLowerCase();
+                                  setInner(() {});
                                 },
                               ),
-                            );
-                          },
-                        ),
+                              const SizedBox(height: 8),
+                              ConstrainedBox(
+                                constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.45),
+                                child: ListView.builder(
+                                  shrinkWrap: true,
+                                  itemCount: filtered.length,
+                                  itemBuilder: (c, i) {
+                                    final g = filtered[i];
+                                    return Card(
+                                      child: ListTile(
+                                        leading: const Icon(Icons.shopping_cart, size: 28),
+                                        title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                        subtitle: Text(g.year),
+                                        trailing: IconButton(
+                                          icon: const Icon(Icons.delete, color: Colors.redAccent),
+                                          onPressed: () {
+                                            setState(() { _wishlist.removeWhere((x) => x.id == g.id); });
+                                            setDialogState(() {});
+                                            setInner(() {});
+                                            _saveCollections();
+                                          },
+                                        ),
+                                        onTap: () {
+                                          Navigator.pop(ctx);
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) => GameDetailPage(
+                                                game: g,
+                                                onAddToMyCollection: () => _addToMyCollection(g),
+                                                onAddToWishlist: () => _addToWishlist(g),
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ),
+                            ]);
+                          });
+                        }),
                         const SizedBox(height: 12),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
@@ -871,13 +986,17 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 16),
               TextField(
                 decoration: const InputDecoration(
-                  labelText: 'Search games',
+                  labelText: 'Search games (BoardGameGeek library + yours)',
                   border: OutlineInputBorder(),
                   prefixIcon: Icon(Icons.search),
                 ),
                 onChanged: (value) {
                   setState(() {
                     _searchText = value;
+                  });
+                  _searchDebounce?.cancel();
+                  _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+                    _searchBggLibrary(value);
                   });
                 },
               ),
@@ -980,38 +1099,80 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 16),
               Expanded(
-                child: _filteredGames.isEmpty
-                    ? const Center(
-                        child: Text(
-                          'No games found. Try a different search term.',
-                          textAlign: TextAlign.center,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      // Your personal games matches
+                      if (_localMatches.isNotEmpty) ...[
+                        const Padding(
+                          padding: EdgeInsets.only(top: 4, bottom: 8),
+                          child: Text(
+                            'Your collection & wishlist',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
                         ),
-                      )
-                    : ListView.separated(
-                        itemCount: _filteredGames.length,
-                        separatorBuilder: (_, __) => const SizedBox(height: 12),
-                        itemBuilder: (context, index) {
-                          final game = _filteredGames[index];
-                          return GameCard(
+                        ..._localMatches.map((game) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: GameCard(
                             game: game,
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => GameDetailPage(
-                                    game: game,
-                                    isInMyCollection: _myCollection.any((g) => g.id == game.id),
-                                    isInWishlist: _wishlist.any((g) => g.id == game.id),
-                                    onAddToMyCollection: () => _addToMyCollection(game),
-                                    onAddToWishlist: () => _addToWishlist(game),
-                                    onLogPlay: (g) => _logPlay(g),
-                                  ),
-                                ),
-                              );
-                            },
-                          );
-                        },
+                            onTap: () => _viewGame(game),
+                          ),
+                        )),
+                        const SizedBox(height: 8),
+                        const Divider(height: 1),
+                        const SizedBox(height: 8),
+                      ],
+
+                      // BGG library results
+                      Row(
+                        children: [
+                          const Text(
+                            'BoardGameGeek library',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                          ),
+                          if (_isSearchingBgg) ...[
+                            const SizedBox(width: 8),
+                            const SizedBox(
+                              width: 14,
+                              height: 14,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ],
+                        ],
                       ),
+                      const SizedBox(height: 8),
+
+                      if (_bggSearchResults.isEmpty && !_isSearchingBgg && _searchText.trim().length >= 2)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            'No BGG results. Try a different search term.',
+                            textAlign: TextAlign.center,
+                          ),
+                        )
+                      else if (_bggSearchResults.isEmpty && !_isSearchingBgg)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 12),
+                          child: Text(
+                            'Search above to explore the full BoardGameGeek library.\nPopular games are shown by default.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.grey),
+                          ),
+                        )
+                      else
+                        ..._bggSearchResults.map((game) => Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: GameCard(
+                            game: game,
+                            onTap: () => _viewGame(game),
+                          ),
+                        )),
+
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
               ),
             ],
           ),
@@ -1032,8 +1193,12 @@ class GameCard extends StatelessWidget {
     return Card(
       child: ListTile(
         onTap: onTap,
-        title: Text(game.name),
-        subtitle: Text('${game.year} · ${game.description ?? "Board Game"}'),
+        title: Text(game.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        subtitle: Text(
+          '${game.year} · ${game.description ?? "Board Game"}',
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+        ),
         trailing: const Icon(Icons.chevron_right),
       ),
     );
@@ -1090,9 +1255,11 @@ class GameDetailPage extends StatelessWidget {
           ],
           const SizedBox(height: 16),
 
-          // Stats
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          // Stats - use Wrap to avoid right overflow on small screens
+          Wrap(
+            spacing: 12,
+            runSpacing: 8,
+            alignment: WrapAlignment.spaceEvenly,
             children: [
               _StatItem(label: 'Players', value: game.playerCount),
               _StatItem(label: 'Weight', value: game.weightString),
@@ -1223,14 +1390,19 @@ class GameDetailPage extends StatelessWidget {
                 ActionChip(
                   avatar: const Icon(Icons.open_in_new, size: 18),
                   label: const Text('BGG Page'),
-                  onPressed: () => _launch('https://boardgamegeek.com/boardgame/${game.id}'),
+                  onPressed: () {
+                    final bggUrl = game.id.startsWith('manual_')
+                        ? 'https://boardgamegeek.com/geeksearch.php?action=search&objecttype=boardgame&q=${Uri.encodeComponent(game.name)}'
+                        : 'https://boardgamegeek.com/boardgame/${game.id}';
+                    _launch(bggUrl, context);
+                  },
                 ),
                 ActionChip(
                   avatar: const Icon(Icons.play_circle, size: 18),
                   label: const Text('How to Play'),
                   onPressed: () {
                     final slug = game.name.toLowerCase().replaceAll(' ', '+');
-                    _launch('https://www.youtube.com/results?search_query=how+to+play+$slug+watch+it+played');
+                    _launch("https://www.youtube.com/results?search_query=how+to+play+$slug+watch+it+played", context);
                   },
                 ),
                 ActionChip(
@@ -1242,7 +1414,7 @@ class GameDetailPage extends StatelessWidget {
                   ActionChip(
                     avatar: const Icon(Icons.computer, size: 18),
                     label: const Text('Digital Play'),
-                    onPressed: () => _launch(game.digitalPlatforms.first.url ?? 'https://boardgamegeek.com/boardgame/${game.id}'),
+                    onPressed: () => _launch(game.digitalPlatforms.first.url ?? 'https://boardgamegeek.com/boardgame/${game.id}', context),
                   ),
                 if (game.expansions.isNotEmpty)
                   ActionChip(
@@ -1280,7 +1452,7 @@ class GameDetailPage extends StatelessWidget {
                     leading: const Icon(Icons.computer),
                     title: Text(platform.name),
                     trailing: platform.url != null ? const Icon(Icons.open_in_new) : null,
-                    onTap: platform.url != null ? () => _launch(platform.url!) : null,
+                    onTap: platform.url != null ? () => _launch(platform.url!, context) : null,
                   );
                 }).toList(),
               ),
@@ -1329,7 +1501,7 @@ class GameDetailPage extends StatelessWidget {
                   dense: true,
                   leading: const Icon(Icons.play_circle_outline),
                   title: Text(link.$1),
-                  onTap: () => _launch(link.$2),
+                  onTap: () => _launch(link.$2, context),
                 );
               }).toList(),
             ),
@@ -1365,12 +1537,22 @@ class GameDetailPage extends StatelessWidget {
                 ListTile(
                   leading: const Icon(Icons.link),
                   title: const Text('BoardGameGeek Files'),
-                  onTap: () => _launch('https://boardgamegeek.com/boardgame/${game.id}/files'),
+                  onTap: () {
+                    final url = game.id.startsWith('manual_')
+                        ? 'https://boardgamegeek.com/geeksearch.php?action=search&objecttype=boardgame&q=${Uri.encodeComponent(game.name)}'
+                        : 'https://boardgamegeek.com/boardgame/${game.id}/files';
+                    _launch(url, context);
+                  },
                 ),
                 ListTile(
                   leading: const Icon(Icons.link),
                   title: const Text('Full BGG Page'),
-                  onTap: () => _launch('https://boardgamegeek.com/boardgame/${game.id}'),
+                  onTap: () {
+                    final url = game.id.startsWith('manual_')
+                        ? 'https://boardgamegeek.com/geeksearch.php?action=search&objecttype=boardgame&q=${Uri.encodeComponent(game.name)}'
+                        : 'https://boardgamegeek.com/boardgame/${game.id}';
+                    _launch(url, context);
+                  },
                 ),
               ],
             ),
@@ -1383,9 +1565,9 @@ class GameDetailPage extends StatelessWidget {
   List<(String, String)> _buildVideoLinks(String name) {
     final slug = name.toLowerCase().replaceAll(' ', '+');
     return [
-      ('Watch It Played', 'https://www.youtube.com/results?search_query=how+to+play+$slug+%22watch+it+played%22'),
-      ('Rules Explained', 'https://www.youtube.com/results?search_query=$slug+rules+explained'),
-      ('Search YouTube', 'https://www.youtube.com/results?search_query=how+to+play+$slug'),
+      ('Watch It Played', "https://www.youtube.com/results?search_query=how+to+play+$slug+%22watch+it+played%22"),
+      ('Rules Explained', "https://www.youtube.com/results?search_query=$slug+rules+explained"),
+      ('Search YouTube', "https://www.youtube.com/results?search_query=how+to+play+$slug"),
     ];
   }
 
@@ -1417,10 +1599,23 @@ Be concrete and reference actual mechanics.
     );
   }
 
-  Future<void> _launch(String url) async {
-    final uri = Uri.parse(url);
-    if (await canLaunchUrl(uri)) {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
+  Future<void> _launch(String url, [BuildContext? ctx]) async {
+    if (url.isEmpty) return;
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else if (ctx != null) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          const SnackBar(content: Text('Could not open browser.')),
+        );
+      }
+    } catch (e) {
+      if (ctx != null) {
+        ScaffoldMessenger.of(ctx).showSnackBar(
+          SnackBar(content: Text('Could not open browser')),
+        );
+      }
     }
   }
 }
@@ -1433,11 +1628,15 @@ class _StatItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Text(value, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-        Text(label, style: const TextStyle(fontSize: 11, color: Colors.grey)),
-      ],
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 60),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(value, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold), overflow: TextOverflow.ellipsis),
+          Text(label, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+        ],
+      ),
     );
   }
 }
