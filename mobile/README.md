@@ -71,5 +71,12 @@ mobile/
 - [ ] Manual entries (add games manually without photo)
 - [ ] Illegal move tracker (take photo of game in progress to detect/flag illegal moves)
 - [ ] Digital availability section (show if a game can be played digitally and on which platforms, e.g. Board Game Arena, Tabletop Simulator, Steam, etc.)
+- [ ] In-app bug submission / feedback tab or "Contact Us" section for reporting issues and suggesting improvements
+
+## Feedback
+
+Found a bug or want to suggest an improvement?
+
+→ [Open an Issue](https://github.com/Cyberj812/Board-Game-Identification/issues/new/choose)
 
 This complements the original Python/Streamlit web prototype.

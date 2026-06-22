@@ -118,6 +118,7 @@ Future improvements (easy to add):
 - [ ] Manual entries (add games manually without photo)
 - [ ] Illegal move tracker (take photo of game in progress to detect/flag illegal moves)
 - [ ] Digital availability section (show if a game can be played digitally and on which platforms, e.g. Board Game Arena, Tabletop Simulator, Steam, etc.)
+- [ ] In-app bug submission / feedback tab or "Contact Us" section for reporting issues and suggesting improvements
 
 ## Mobile App (Flutter)
 
@@ -145,6 +146,16 @@ Still useful for quick testing on desktop:
 source .venv/bin/activate
 streamlit run app.py
 ```
+
+## Feedback & Bug Reports
+
+Found a bug or have an idea for improvement?
+
+Please use the **Issues** tab:
+- [Report a Bug](https://github.com/Cyberj812/Board-Game-Identification/issues/new?template=bug_report.md)
+- [Request a Feature](https://github.com/Cyberj812/Board-Game-Identification/issues/new?template=feature_request.md)
+
+For general discussion, use [GitHub Discussions](https://github.com/Cyberj812/Board-Game-Identification/discussions).
 
 ## License
 

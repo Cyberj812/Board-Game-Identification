@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: General Questions / Discussion
+    url: https://github.com/Cyberj812/Board-Game-Identification/discussions
+    about: Please use Discussions for questions, ideas, or general conversation instead of opening an issue.
