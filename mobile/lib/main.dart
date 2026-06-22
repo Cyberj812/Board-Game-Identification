@@ -251,8 +251,19 @@ class _HomePageState extends State<HomePage> {
       // Limit to first 10 to keep search fast
       final toEnrich = rawResults.take(10).toList();
       if (toEnrich.isNotEmpty) {
-        final futures = toEnrich.map((g) => _bgg.getGameDetails(g.id).catchError((_) => g));
-        final enriched = await Future.wait(futures);
+        // Ensure each future returns a non-null Game (fallback to the original partial game)
+        final futures = toEnrich.map((g) async {
+          try {
+            final details = await _bgg.getGameDetails(g.id);
+            return details ?? g; // if details is null, fall back to the original 'g'
+          } catch (_) {
+            return g; // on error, fall back to original
+          }
+        });
+
+        // Now 'enriched' is List<Game> (non-nullable)
+        final List<Game> enriched = await Future.wait(futures);
+
         for (int i = 0; i < enriched.length; i++) {
           if (i < augmented.length) {
             // Replace with enriched version (has imageUrl etc.)
