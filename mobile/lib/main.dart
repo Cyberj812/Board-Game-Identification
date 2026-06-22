@@ -108,15 +108,7 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
-  List<Game> get _localMatches {
-    final q = _searchText.toLowerCase().trim();
-    final userGames = <Game>[..._myCollection, ..._wishlist];
-    if (q.isEmpty) return userGames;
-    return userGames.where((g) =>
-      g.name.toLowerCase().contains(q) ||
-      (g.description ?? '').toLowerCase().contains(q)
-    ).toList();
-  }
+
 
   Future<void> _searchBggLibrary(String query) async {
     final q = query.trim();
@@ -1034,15 +1026,15 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 8,
                 children: [
                   OutlinedButton.icon(
                     onPressed: _showCollection,
                     icon: const Icon(Icons.collections_bookmark),
                     label: Text('My Collection (${_myCollection.length})'),
                   ),
-                  const SizedBox(width: 12),
                   OutlinedButton.icon(
                     onPressed: _showWishlist,
                     icon: const Icon(Icons.shopping_cart),
@@ -1064,28 +1056,7 @@ class _HomePageState extends State<HomePage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
-                      // Your personal games matches
-                      if (_localMatches.isNotEmpty) ...[
-                        const Padding(
-                          padding: EdgeInsets.only(top: 4, bottom: 8),
-                          child: Text(
-                            'Your collection & wishlist',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                          ),
-                        ),
-                        ..._localMatches.map((game) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: GameCard(
-                            game: game,
-                            onTap: () => _viewGame(game),
-                          ),
-                        )),
-                        const SizedBox(height: 8),
-                        const Divider(height: 1),
-                        const SizedBox(height: 8),
-                      ],
-
-                      // BGG library results
+                      // BGG library results (primary game list - search the full library)
                       Row(
                         children: [
                           const Text(
@@ -1440,25 +1411,17 @@ class GameDetailPage extends StatelessWidget {
                   ),
           ),
 
-          // Similar Games (simple)
+          // Similar / Popular Games (from BGG)
           _Section(
-            title: 'Similar Games',
+            title: 'Popular on BGG',
             child: Column(
-              children: sampleGames
-                  .where((g) => g.id != game.id && (g.categories.any((c) => game.categories.contains(c)) || g.name != game.name))
-                  .take(3)
-                  .map((g) => ListTile(
-                        dense: true,
-                        title: Text(g.name),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(builder: (_) => GameDetailPage(game: g)),
-                          );
-                        },
-                      ))
-                  .toList(),
+              children: const [
+                // Note: For a real similar-games feature we'd query BGG recommendations.
+                // For now we surface a few popular titles as discovery.
+                ListTile(dense: true, title: Text('Wingspan')),
+                ListTile(dense: true, title: Text('Dune: Imperium')),
+                ListTile(dense: true, title: Text('Ark Nova')),
+              ],
             ),
           ),
 
@@ -1632,40 +1595,6 @@ class _Section extends StatelessWidget {
     );
   }
 }
-
-// Simple demo data for browse (limited info)
-final sampleGames = <Game>[
-  Game(
-    id: 'sample_catan',
-    name: 'Catan',
-    year: '1995',
-    description: 'Trade, build, and settle the island of Catan in this gateway strategy classic.',
-  ),
-  Game(
-    id: 'sample_ticket',
-    name: 'Ticket to Ride',
-    year: '2004',
-    description: 'Collect train cards, claim routes, and connect cities across the map.',
-  ),
-  Game(
-    id: 'sample_wingspan',
-    name: 'Wingspan',
-    year: '2019',
-    description: 'Build a wildlife preserve by attracting birds with different powers and habitats.',
-  ),
-  Game(
-    id: 'sample_pandemic',
-    name: 'Pandemic',
-    year: '2008',
-    description: 'Work together to stop global outbreaks before time runs out.',
-  ),
-  Game(
-    id: 'sample_azul',
-    name: 'Azul',
-    year: '2017',
-    description: 'Draft tiles and complete patterns to score points in this elegant abstract game.',
-  ),
-];
 
 class _SpinningWheel extends StatelessWidget {
   final List<Game> games;

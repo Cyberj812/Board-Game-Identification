@@ -50,22 +50,25 @@ class BggService {
   }
 
   Future<Game?> getGameDetails(String id) async {
-    // Try static popular data first for speed & reliability
-    final static = _popularGamesMap[id];
-    if (static != null) return static;
+    // Always try the live BGG API first to get complete data (expansions, full stats, etc.)
+    try {
+      final uri = Uri.parse('$_base/thing?id=$id&stats=1');
+      final resp = await http.get(uri, headers: _headers);
 
-    final uri = Uri.parse('$_base/thing?id=$id&stats=1');
-    final resp = await http.get(uri, headers: _headers);
-
-    if (resp.statusCode != 200) {
-      return _popularGamesMap[id];
+      if (resp.statusCode == 200) {
+        final doc = XmlDocument.parse(resp.body);
+        final item = doc.findAllElements('item').firstOrNull;
+        if (item != null) {
+          final parsed = _parseThing(item, id);
+          return parsed;
+        }
+      }
+    } catch (_) {
+      // fall through to static on failure
     }
 
-    final doc = XmlDocument.parse(resp.body);
-    final item = doc.findAllElements('item').firstOrNull;
-    if (item == null) return null;
-
-    return _parseThing(item, id);
+    // Fallback to static popular data
+    return _popularGamesMap[id];
   }
 
   Game _parseThing(XmlElement item, String id) {
