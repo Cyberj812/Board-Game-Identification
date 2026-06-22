@@ -89,6 +89,7 @@ mobile/
 - [ ] Illegal move tracker (take photo of game in progress to detect/flag illegal moves)
 - [ ] Digital availability section (show if a game can be played digitally and on which platforms, e.g. Board Game Arena, Tabletop Simulator, Steam, etc.)
 - [ ] In-app bug submission / feedback tab or "Contact Us" section for reporting issues and suggesting improvements
+- [ ] Full local/offline BoardGameGeek database: pre-populate or download a local copy of (most) BGG games so the app can search the entire library without live API calls (with optional periodic sync)
 
 ## Feedback
 
