@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
+import 'dart:convert';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'models/game.dart';
 import 'services/ocr_service.dart';
@@ -38,10 +40,33 @@ class _HomePageState extends State<HomePage> {
   String _searchText = '';
   bool _isScanning = false;
   List<Game> _userCollection = []; // For custom lists and manual entries
+  bool _buildCollectionMode = false; // Toggle for collection photo building
 
   final _picker = ImagePicker();
   final _ocr = OcrService();
   final _bgg = BggService();
+
+  @override
+  void initState() {
+    super.initState();
+    _loadCollection();
+  }
+
+  Future<void> _loadCollection() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonList = prefs.getStringList('userCollection') ?? [];
+    setState(() {
+      _userCollection = jsonList
+          .map((jsonStr) => Game.fromJson(jsonDecode(jsonStr)))
+          .toList();
+    });
+  }
+
+  Future<void> _saveCollection() async {
+    final prefs = await SharedPreferences.getInstance();
+    final jsonList = _userCollection.map((g) => jsonEncode(g.toJson())).toList();
+    await prefs.setStringList('userCollection', jsonList);
+  }
 
   List<Game> get _filteredGames {
     final query = _searchText.toLowerCase();
@@ -94,13 +119,22 @@ class _HomePageState extends State<HomePage> {
       final fullGame = await _bgg.getGameDetails(top.id);
 
       if (fullGame != null && mounted) {
-        _addToCollection(fullGame); // Auto add scanned to collection
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => GameDetailPage(game: fullGame),
-          ),
-        );
+        _addToCollection(fullGame); // Always add to collection for photo building
+        if (!_buildCollectionMode) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => GameDetailPage(
+                game: fullGame,
+                onAddToCollection: () => _addToCollection(fullGame),
+              ),
+            ),
+          );
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('${fullGame.name} added to collection from photo')),
+          );
+        }
       } else if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Could not fetch game details.')),
@@ -122,7 +156,10 @@ class _HomePageState extends State<HomePage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => GameDetailPage(game: game),
+        builder: (_) => GameDetailPage(
+          game: game,
+          onAddToCollection: () => _addToCollection(game),
+        ),
       ),
     );
   }
@@ -161,6 +198,7 @@ class _HomePageState extends State<HomePage> {
         _userCollection.add(game);
       }
     });
+    _saveCollection();
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text('${game.name} added to My Collection')),
     );
@@ -169,42 +207,87 @@ class _HomePageState extends State<HomePage> {
   void _showCollection() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('My Collection'),
-        content: _userCollection.isEmpty
-            ? const Text('No games in collection yet. Scan or add manually!')
-            : SizedBox(
-                width: double.maxFinite,
-                child: ListView.builder(
-                  shrinkWrap: true,
-                  itemCount: _userCollection.length,
-                  itemBuilder: (c, i) {
-                    final g = _userCollection[i];
-                    return ListTile(
-                      title: Text(g.name),
-                      subtitle: Text(g.year),
-                      onTap: () {
-                        Navigator.pop(ctx);
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(builder: (_) => GameDetailPage(game: g)),
-                        );
-                      },
-                    );
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('My Collection'),
+            content: _userCollection.isEmpty
+                ? const Text('No games in collection yet. Scan (in Build Mode) or add manually!')
+                : SizedBox(
+                    width: double.maxFinite,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        ListView.builder(
+                          shrinkWrap: true,
+                          itemCount: _userCollection.length,
+                          itemBuilder: (c, i) {
+                            final g = _userCollection[i];
+                            return ListTile(
+                              title: Text(g.name),
+                              subtitle: Text(g.year),
+                              trailing: IconButton(
+                                icon: const Icon(Icons.delete),
+                                onPressed: () {
+                                  setState(() {
+                                    _userCollection.removeAt(i);
+                                  });
+                                  setDialogState(() {});
+                                  _saveCollection();
+                                },
+                              ),
+                              onTap: () {
+                                Navigator.pop(ctx);
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => GameDetailPage(
+                                      game: g,
+                                      onAddToCollection: () => _addToCollection(g),
+                                    ),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () {
+                                Navigator.pop(ctx);
+                                setState(() => _buildCollectionMode = true);
+                                _scanBox(); // Directly start scan for collection
+                              },
+                              icon: const Icon(Icons.camera_alt),
+                              label: const Text('Scan More'),
+                            ),
+                            TextButton.icon(
+                              onPressed: _showManualEntry,
+                              icon: const Icon(Icons.edit),
+                              label: const Text('Manual'),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+              if (_userCollection.isNotEmpty)
+                TextButton(
+                  onPressed: () {
+                    setState(() => _userCollection.clear());
+                    setDialogState(() {});
+                    _saveCollection();
                   },
+                  child: const Text('Clear All'),
                 ),
-              ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-          if (_userCollection.isNotEmpty)
-            TextButton(
-              onPressed: () {
-                setState(() => _userCollection.clear());
-                Navigator.pop(ctx);
-              },
-              child: const Text('Clear'),
-            ),
-        ],
+            ],
+          );
+        },
       ),
     );
   }
@@ -402,6 +485,18 @@ class _HomePageState extends State<HomePage> {
                   label: Text('My Collection (${_userCollection.length})'),
                 ),
               ),
+              const SizedBox(height: 8),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text('Build Collection Mode'),
+                  Switch(
+                    value: _buildCollectionMode,
+                    onChanged: (val) => setState(() => _buildCollectionMode = val),
+                  ),
+                  const Text('(photo of collection)'),
+                ],
+              ),
               const SizedBox(height: 16),
               Expanded(
                 child: _filteredGames.isEmpty
@@ -422,7 +517,10 @@ class _HomePageState extends State<HomePage> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => GameDetailPage(game: game),
+                                  builder: (_) => GameDetailPage(
+                                    game: game,
+                                    onAddToCollection: () => _addToCollection(game),
+                                  ),
                                 ),
                               );
                             },
@@ -459,8 +557,9 @@ class GameCard extends StatelessWidget {
 
 class GameDetailPage extends StatelessWidget {
   final Game game;  // Now uses rich Game model from BGG
+  final VoidCallback? onAddToCollection;
 
-  const GameDetailPage({super.key, required this.game});
+  const GameDetailPage({super.key, required this.game, this.onAddToCollection});
 
   @override
   Widget build(BuildContext context) {
@@ -490,11 +589,14 @@ class GameDetailPage extends StatelessWidget {
           // Add to Collection button
           ElevatedButton.icon(
             onPressed: () {
-              // This is called from context of HomePageState? For simplicity, use a global or pass callback.
-              // For demo, show snack. Real impl would use provider.
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Added to My Collection (demo)')),
-              );
+              if (onAddToCollection != null) {
+                onAddToCollection!();
+              } else {
+                // Fallback for direct navigation
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('${game.name} would be added to collection')),
+                );
+              }
             },
             icon: const Icon(Icons.add),
             label: const Text('Add to My Collection'),
