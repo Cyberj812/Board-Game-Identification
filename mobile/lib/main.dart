@@ -244,16 +244,19 @@ class _HomePageState extends State<HomePage> {
       // Get initial results from BGG search (server-side matching on the query)
       final rawResults = await _bgg.searchGames(q, limit: 25, start: 0);
 
-      // Client-side fuzzy filtering for close matches (typo tolerant).
-      // Avoids exact-only logic. Uses Levenshtein distance + contains.
+      // Client-side fuzzy filtering for close matches (typo tolerant, no exact-only).
       final qLower = q.toLowerCase();
-      final closeMatches = rawResults.where((g) {
+      var closeMatches = rawResults.where((g) {
         return _fuzzyMatch(g.name, q, maxDist: 2);
       }).toList();
 
-      // Augment with expansions only for close-matching base games.
-      // This surfaces relevant expansions (e.g. "Catan" → Catan + Cities & Knights etc.)
-      // without pulling unrelated items.
+      // If fuzzy too strict and no matches, fall back to all BGG raw results
+      // so searches like "Stardew Valley" still work.
+      if (closeMatches.isEmpty && rawResults.isNotEmpty) {
+        closeMatches = rawResults;
+      }
+
+      // Augment with expansions only for close-matching base.
       List<Game> augmented = List.from(closeMatches);
       if (closeMatches.isNotEmpty) {
         try {
@@ -272,11 +275,11 @@ class _HomePageState extends State<HomePage> {
         } catch (_) {}
       }
 
-      // Remove user's own games
+      // Dedup user games
       final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
       final filteredResults = augmented.where((g) => !userIds.contains(g.id)).toList();
 
-      // Sort by fuzzy distance (lower = better match), then by name length
+      // Sort by fuzzy distance
       filteredResults.sort((a, b) {
         final da = _levenshtein(a.name.toLowerCase(), qLower);
         final db = _levenshtein(b.name.toLowerCase(), qLower);
@@ -284,7 +287,6 @@ class _HomePageState extends State<HomePage> {
         return a.name.length.compareTo(b.name.length);
       });
 
-      // Cap at 25 results per page
       final limited = filteredResults.take(25).toList();
 
       if (mounted) {
@@ -377,9 +379,8 @@ class _HomePageState extends State<HomePage> {
   Future<void> _viewGame(Game partialGame) async {
     Game gameToShow = partialGame;
 
-    // If it looks like a minimal BGG result (no description/stats), fetch full details
-    final isMinimal = partialGame.description == null && partialGame.minPlayers == 0 && partialGame.rank == null;
-    if (isMinimal && partialGame.id.isNotEmpty && !partialGame.id.startsWith('manual_')) {
+    // Always fetch full details for BGG games to ensure expansions, images, stats etc. are loaded
+    if (partialGame.id.isNotEmpty && !partialGame.id.startsWith('manual_')) {
       final full = await _bgg.getGameDetails(partialGame.id);
       if (full != null) {
         gameToShow = full;
@@ -426,15 +427,33 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // Search BGG using extracted text
-      final results = await _bgg.searchGames(text, limit: 5);
+      // Clean OCR text for better matching
+      String cleaned = text.replaceAll(RegExp(r'[^a-zA-Z0-9\s]'), ' ')
+                          .replaceAll(RegExp(r'\s+'), ' ')
+                          .trim();
+
+      var results = await _bgg.searchGames(cleaned, limit: 5);
+
+      if (results.isEmpty && cleaned.length > 3) {
+        // Try the longest word as fallback
+        final words = cleaned.split(' ').where((w) => w.length > 2).toList();
+        words.sort((a, b) => b.length.compareTo(a.length));
+        if (words.isNotEmpty) {
+          results = await _bgg.searchGames(words.first, limit: 5);
+        }
+      }
 
       if (results.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No matching games found. Try another photo.')),
+            SnackBar(content: Text('No matching games found. OCR got: "$cleaned". Try manual search or another photo.')),
           );
         }
+        // Pre-fill search with OCR text for manual correction
+        setState(() {
+          _searchText = cleaned;
+          _searchBggLibrary(cleaned);
+        });
         return;
       }
 
@@ -1193,12 +1212,12 @@ class _HomePageState extends State<HomePage> {
                 'Find your next board game',
                 style: Theme.of(context).textTheme.headlineLarge,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               Text(
                 'Identify games while shopping or from your collection. Add to Wishlist or My Collection.',
-                style: Theme.of(context).textTheme.bodyMedium,
+                style: Theme.of(context).textTheme.bodySmall,
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               TextField(
                 decoration: const InputDecoration(
                   labelText: 'Search games (BoardGameGeek library + yours)',
@@ -1223,7 +1242,7 @@ class _HomePageState extends State<HomePage> {
                   });
                 },
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
               Row(
                 children: [
                   Expanded(
@@ -1233,7 +1252,7 @@ class _HomePageState extends State<HomePage> {
                       onPressed: _isScanning ? null : _scanBox,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: FilledButton.icon(
                       icon: const Icon(Icons.casino),
@@ -1330,36 +1349,41 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
 
-              // Bottom actions (compact to avoid overflow)
+              // Bottom actions in horizontal scroll to save vertical space and avoid overflow
               const SizedBox(height: 8),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 8,
-                children: [
-                  FilledButton.icon(
-                    onPressed: _showWhatShouldWePlay,
-                    icon: const Icon(Icons.casino_outlined),
-                    label: const Text('What Should We Play?'),
-                    style: FilledButton.styleFrom(
-                      backgroundColor: Colors.purple,
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: _showWhatShouldWePlay,
+                      icon: const Icon(Icons.casino_outlined),
+                      label: const Text('What Should We Play?'),
+                      style: FilledButton.styleFrom(
+                        backgroundColor: Colors.purple,
+                      ),
                     ),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _showCollection,
-                    icon: const Icon(Icons.collections_bookmark),
-                    label: Text('My Collection (${_myCollection.length})'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: _showWishlist,
-                    icon: const Icon(Icons.shopping_cart),
-                    label: Text('Wishlist (${_wishlist.length})'),
-                  ),
-                  TextButton.icon(
-                    onPressed: _showManualEntry,
-                    icon: const Icon(Icons.edit),
-                    label: const Text('Add manual entry'),
-                  ),
-                ],
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _showCollection,
+                      icon: const Icon(Icons.collections_bookmark),
+                      label: Text('My Collection (${_myCollection.length})'),
+                    ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      onPressed: _showWishlist,
+                      icon: const Icon(Icons.shopping_cart),
+                      label: Text('Wishlist (${_wishlist.length})'),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton.icon(
+                      onPressed: _showManualEntry,
+                      icon: const Icon(Icons.edit),
+                      label: const Text('Add manual entry'),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
