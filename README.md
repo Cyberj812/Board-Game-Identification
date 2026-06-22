@@ -122,21 +122,27 @@ Future improvements (easy to add):
 
 ## Mobile App (Flutter)
 
-Full native mobile experience for both platforms.
+Full native mobile experience for both platforms (Android, iOS, Windows, macOS, Linux, Web).
+
+### Download Pre-built APK (easiest for testing)
+
+1. Go to the [Actions tab](https://github.com/Cyberj812/Board-Game-Identification/actions)
+2. Click on the latest **"Build Android APK"** workflow run
+3. Download the **board-game-snap-debug** artifact (the `app-debug.apk`)
+
+Or trigger a manual build:
+- Go to Actions → "Build Android APK" → "Run workflow"
+
+Install the APK on your Android device (enable "Install unknown apps").
 
 ```bash
+# If building locally
 cd mobile
 flutter pub get
-flutter run
+flutter build apk --debug
 ```
 
-See [mobile/README.md](mobile/README.md) for details.
-
-Key advantages over the web version:
-- On-device OCR (Google ML Kit)
-- Native camera experience
-- Works great offline for popular games
-- Ready for App Store / Play Store distribution
+See [mobile/README.md](mobile/README.md) for full setup.
 
 ## Web Prototype (Streamlit)
 

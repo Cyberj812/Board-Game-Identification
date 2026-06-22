@@ -27,7 +27,17 @@ flutter doctor
 
 Follow instructions for Xcode (iOS) and/or Android Studio.
 
-### 2. Get dependencies & run
+### 2. Download Pre-built APK (no Flutter needed)
+
+The easiest way:
+
+1. Go to https://github.com/Cyberj812/Board-Game-Identification/actions
+2. Open the latest "Build Android APK" run
+3. Download the **board-game-snap-debug** artifact
+
+This gives you the latest `app-debug.apk` with all current features.
+
+### 3. Build locally (if you have Flutter)
 
 ```bash
 cd mobile
@@ -35,7 +45,14 @@ flutter pub get
 flutter run
 ```
 
-### 3. (Recommended) Add BGG Token for best data
+Or for APK:
+
+```bash
+flutter build apk --debug
+# or --release
+```
+
+### 4. (Recommended) Add BGG Token for best data
 
 In the app (future Settings screen) or we can add secure storage for a personal BGG API token from https://boardgamegeek.com/applications
 
