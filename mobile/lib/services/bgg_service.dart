@@ -19,15 +19,16 @@ class BggService {
     return h;
   }
 
-  Future<List<Game>> searchGames(String query, {int limit = 10}) async {
+  Future<List<Game>> searchGames(String query, {int limit = 10, int start = 0}) async {
     if (query.trim().length < 2) return [];
 
-    final uri = Uri.parse('$_base/search?query=${Uri.encodeComponent(query)}&type=boardgame');
+    final uri = Uri.parse('$_base/search?query=${Uri.encodeComponent(query)}&type=boardgame&start=$start');
     final resp = await http.get(uri, headers: _headers);
 
     if (resp.statusCode != 200) {
       // Fallback to popular if blocked
-      return _popularGames.where((g) => g.name.toLowerCase().contains(query.toLowerCase())).toList();
+      final fallback = _popularGames.where((g) => g.name.toLowerCase().contains(query.toLowerCase())).toList();
+      return fallback.skip(start).take(limit).toList();
     }
 
     final document = XmlDocument.parse(resp.body);
@@ -173,6 +174,13 @@ class BggService {
         DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
         DigitalPlatform(name: 'Catan Universe (Steam)', url: 'https://store.steampowered.com/app/544730/Catan_Universe/'),
       ],
+      expansions: [
+        Expansion(id: '11', name: 'Catan: Cities & Knights'),
+        Expansion(id: '10', name: 'Catan: Seafarers'),
+        Expansion(id: '12', name: 'Catan: Traders & Barbarians'),
+        Expansion(id: '13', name: 'Catan: Explorers & Pirates'),
+        Expansion(id: '14', name: 'Catan: Cities & Knights 5-6 Player'),
+      ],
     ),
     Game(
       id: '205637',
@@ -197,6 +205,15 @@ class BggService {
         DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
       ],
     ),
+    Game(id: '68448', name: '7 Wonders', year: '2010', minPlayers: 3, maxPlayers: 7, playtime: '30', weight: 2.3, rank: 150),
+    Game(id: '822', name: 'Carcassonne', year: '2000', minPlayers: 2, maxPlayers: 5, playtime: '30-45', weight: 1.9, rank: 300),
+    Game(id: '36218', name: 'Dominion', year: '2008', minPlayers: 2, maxPlayers: 4, playtime: '30', weight: 2.0, rank: 120),
+    Game(id: '30549', name: 'Pandemic', year: '2008', minPlayers: 2, maxPlayers: 4, playtime: '45', weight: 2.4, rank: 250),
+    Game(id: '31260', name: 'Agricola', year: '2007', minPlayers: 1, maxPlayers: 5, playtime: '90-120', weight: 3.6, rank: 180),
+    Game(id: '3076', name: 'Puerto Rico', year: '2002', minPlayers: 3, maxPlayers: 5, playtime: '90-150', weight: 3.3, rank: 90),
+    Game(id: '9209', name: 'Ticket to Ride', year: '2004', minPlayers: 2, maxPlayers: 5, playtime: '30-60', weight: 1.9, rank: 220),
+    Game(id: '2651', name: 'Power Grid', year: '2004', minPlayers: 2, maxPlayers: 6, playtime: '120', weight: 3.3, rank: 140),
+    Game(id: '40834', name: '7 Wonders Duel', year: '2015', minPlayers: 2, maxPlayers: 2, playtime: '30', weight: 2.2, rank: 80),
   ];
 
   static final Map<String, Game> _popularGamesMap =

@@ -130,6 +130,8 @@ class _HomePageState extends State<HomePage> {
   Timer? _searchDebounce;
   List<Game> _bggSearchResults = [];
   bool _isSearchingBgg = false;
+  int _searchStart = 0;
+  bool _hasMoreResults = true;
 
   final _picker = ImagePicker();
   final _ocr = OcrService();
@@ -145,6 +147,7 @@ class _HomePageState extends State<HomePage> {
     _confettiController = ConfettiController(duration: const Duration(seconds: 2));
     // Start with popular BGG games in the library view
     _bggSearchResults = _bgg.getPopularGames();
+    _hasMoreResults = false;
   }
 
   @override
@@ -183,36 +186,190 @@ class _HomePageState extends State<HomePage> {
 
 
 
+  // Levenshtein distance for typo tolerance (small edit distance = close match)
+  int _levenshtein(String s, String t) {
+    if (s == t) return 0;
+    if (s.isEmpty) return t.length;
+    if (t.isEmpty) return s.length;
+
+    List<int> v0 = List.filled(t.length + 1, 0);
+    List<int> v1 = List.filled(t.length + 1, 0);
+
+    for (int i = 0; i <= t.length; i++) v0[i] = i;
+
+    for (int i = 0; i < s.length; i++) {
+      v1[0] = i + 1;
+      for (int j = 0; j < t.length; j++) {
+        int cost = (s[i] == t[j]) ? 0 : 1;
+        v1[j + 1] = [
+          v1[j] + 1,
+          v0[j + 1] + 1,
+          v0[j] + cost
+        ].reduce((a, b) => a < b ? a : b);
+      }
+      final temp = v0;
+      v0 = v1;
+      v1 = temp;
+    }
+    return v0[t.length];
+  }
+
+  bool _fuzzyMatch(String name, String query, {int maxDist = 2}) {
+    final n = name.toLowerCase().trim();
+    final q = query.toLowerCase().trim();
+    if (n.isEmpty || q.isEmpty) return false;
+    if (n.contains(q) || q.contains(n)) return true;
+    return _levenshtein(n, q) <= maxDist;
+  }
+
   Future<void> _searchBggLibrary(String query) async {
     final q = query.trim();
     if (q.length < 2) {
       setState(() {
         _bggSearchResults = _bgg.getPopularGames();
         _isSearchingBgg = false;
+        _hasMoreResults = false;
       });
       return;
     }
 
-    setState(() => _isSearchingBgg = true);
+    setState(() {
+      _isSearchingBgg = true;
+      _searchStart = 0;
+      _hasMoreResults = true;
+    });
 
     try {
-      final results = await _bgg.searchGames(q, limit: 15);
+      // Get initial results from BGG search (server-side matching on the query)
+      final rawResults = await _bgg.searchGames(q, limit: 25, start: 0);
 
-      // Remove any that are already in user's collection/wishlist
+      // Client-side fuzzy filtering for close matches (typo tolerant).
+      // Avoids exact-only logic. Uses Levenshtein distance + contains.
+      final qLower = q.toLowerCase();
+      final closeMatches = rawResults.where((g) {
+        return _fuzzyMatch(g.name, q, maxDist: 2);
+      }).toList();
+
+      // Augment with expansions only for close-matching base games.
+      // This surfaces relevant expansions (e.g. "Catan" → Catan + Cities & Knights etc.)
+      // without pulling unrelated items.
+      List<Game> augmented = List.from(closeMatches);
+      if (closeMatches.isNotEmpty) {
+        try {
+          final top = closeMatches.first;
+          if (_fuzzyMatch(top.name, q, maxDist: 2)) {
+            final details = await _bgg.getGameDetails(top.id);
+            if (details != null && details.expansions.isNotEmpty) {
+              for (final exp in details.expansions) {
+                if (!augmented.any((g) => g.id == exp.id) &&
+                    _fuzzyMatch(exp.name, q, maxDist: 2)) {
+                  augmented.add(Game(id: exp.id, name: exp.name, year: ''));
+                }
+              }
+            }
+          }
+        } catch (_) {}
+      }
+
+      // Remove user's own games
       final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
-      final filteredResults = results.where((g) => !userIds.contains(g.id)).toList();
+      final filteredResults = augmented.where((g) => !userIds.contains(g.id)).toList();
+
+      // Sort by fuzzy distance (lower = better match), then by name length
+      filteredResults.sort((a, b) {
+        final da = _levenshtein(a.name.toLowerCase(), qLower);
+        final db = _levenshtein(b.name.toLowerCase(), qLower);
+        if (da != db) return da.compareTo(db);
+        return a.name.length.compareTo(b.name.length);
+      });
+
+      // Cap at 25 results per page
+      final limited = filteredResults.take(25).toList();
 
       if (mounted) {
         setState(() {
-          _bggSearchResults = filteredResults;
+          _bggSearchResults = limited;
+          _searchStart = 0;
+          _hasMoreResults = rawResults.length == 25;
         });
       }
     } catch (_) {
-      // keep previous results or popular on error
+      // on error, show nothing or previous; avoid dumping whole library
+      if (mounted) {
+        setState(() {
+          _bggSearchResults = [];
+          _hasMoreResults = false;
+        });
+      }
     } finally {
       if (mounted) {
         setState(() => _isSearchingBgg = false);
       }
+    }
+  }
+
+  Future<void> _loadMoreBggResults() async {
+    final q = _searchText.trim();
+    if (q.length < 2 || !_hasMoreResults || _isSearchingBgg) return;
+
+    _searchStart += 25;
+    setState(() => _isSearchingBgg = true);
+
+    try {
+      final moreRaw = await _bgg.searchGames(q, limit: 25, start: _searchStart);
+
+      if (moreRaw.isEmpty) {
+        if (mounted) setState(() => _hasMoreResults = false);
+      } else {
+        final qLower = q.toLowerCase();
+        final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
+
+        final newOnes = moreRaw
+            .where((g) =>
+                !userIds.contains(g.id) &&
+                !_bggSearchResults.any((e) => e.id == g.id) &&
+                _fuzzyMatch(g.name, q, maxDist: 2))
+            .toList();
+
+        // Augment expansions for new top if relevant
+        List<Game> toAdd = List.from(newOnes);
+        if (newOnes.isNotEmpty) {
+          try {
+            final topNew = newOnes.first;
+            if (_fuzzyMatch(topNew.name, q, maxDist: 2)) {
+              final details = await _bgg.getGameDetails(topNew.id);
+              if (details != null && details.expansions.isNotEmpty) {
+                for (final exp in details.expansions) {
+                  if (!toAdd.any((g) => g.id == exp.id) &&
+                      !_bggSearchResults.any((e) => e.id == exp.id) &&
+                      _fuzzyMatch(exp.name, q, maxDist: 2)) {
+                    toAdd.add(Game(id: exp.id, name: exp.name, year: ''));
+                  }
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Sort new batch
+        toAdd.sort((a, b) {
+          final da = _levenshtein(a.name.toLowerCase(), qLower);
+          final db = _levenshtein(b.name.toLowerCase(), qLower);
+          if (da != db) return da.compareTo(db);
+          return a.name.length.compareTo(b.name.length);
+        });
+
+        if (mounted) {
+          setState(() {
+            _bggSearchResults.addAll(toAdd.take(25));
+            _hasMoreResults = moreRaw.length == 25;
+          });
+        }
+      }
+    } catch (_) {
+      if (mounted) setState(() => _hasMoreResults = false);
+    } finally {
+      if (mounted) setState(() => _isSearchingBgg = false);
     }
   }
 
@@ -723,42 +880,44 @@ class _HomePageState extends State<HomePage> {
         builder: (context, setStateDialog) {
           return AlertDialog(
             title: Text('Log Play for ${game.name}'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                ListTile(
-                  title: const Text('Date'),
-                  subtitle: Text(selectedDate.toLocal().toString().split(' ')[0]),
-                  trailing: const Icon(Icons.calendar_today),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: selectedDate,
-                      firstDate: DateTime(2000),
-                      lastDate: DateTime.now(),
-                    );
-                    if (picked != null) {
-                      setStateDialog(() => selectedDate = picked);
-                    }
-                  },
-                ),
-                TextFormField(
-                  initialValue: players.toString(),
-                  decoration: const InputDecoration(labelText: 'Number of players'),
-                  keyboardType: TextInputType.number,
-                  onChanged: (val) => players = int.tryParse(val) ?? players,
-                ),
-                TextFormField(
-                  decoration: const InputDecoration(labelText: 'Rating (1-10, optional)'),
-                  keyboardType: TextInputType.number,
-                  onChanged: (val) => rating = double.tryParse(val),
-                ),
-                TextFormField(
-                  decoration: const InputDecoration(labelText: 'Notes (optional)'),
-                  maxLines: 2,
-                  onChanged: (val) => notes = val,
-                ),
-              ],
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ListTile(
+                    title: const Text('Date'),
+                    subtitle: Text(selectedDate.toLocal().toString().split(' ')[0]),
+                    trailing: const Icon(Icons.calendar_today),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: selectedDate,
+                        firstDate: DateTime(2000),
+                        lastDate: DateTime.now(),
+                      );
+                      if (picked != null) {
+                        setStateDialog(() => selectedDate = picked);
+                      }
+                    },
+                  ),
+                  TextFormField(
+                    initialValue: players.toString(),
+                    decoration: const InputDecoration(labelText: 'Number of players'),
+                    keyboardType: TextInputType.number,
+                    onChanged: (val) => players = int.tryParse(val) ?? players,
+                  ),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: 'Rating (1-10, optional)'),
+                    keyboardType: TextInputType.number,
+                    onChanged: (val) => rating = double.tryParse(val),
+                  ),
+                  TextFormField(
+                    decoration: const InputDecoration(labelText: 'Notes (optional)'),
+                    maxLines: 2,
+                    onChanged: (val) => notes = val,
+                  ),
+                ],
+              ),
             ),
             actions: [
               TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
@@ -805,9 +964,10 @@ class _HomePageState extends State<HomePage> {
               title: const Text('What Should We Play?'),
               content: SizedBox(
                 width: double.maxFinite,
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
                     if (_myCollection.isNotEmpty)
                       SwitchListTile(
                         title: const Text('Use all from My Collection'),
@@ -1031,7 +1191,7 @@ class _HomePageState extends State<HomePage> {
       ),
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
@@ -1044,7 +1204,7 @@ class _HomePageState extends State<HomePage> {
                 'Identify games while shopping or from your collection. Add to Wishlist or My Collection.',
                 style: Theme.of(context).textTheme.bodyMedium,
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               TextField(
                 decoration: const InputDecoration(
                   labelText: 'Search games (BoardGameGeek library + yours)',
@@ -1060,6 +1220,8 @@ class _HomePageState extends State<HomePage> {
                     setState(() {
                       _isSearchingBgg = true;
                       _bggSearchResults = [];
+                      _searchStart = 0;
+                      _hasMoreResults = true;
                     });
                   }
                   _searchDebounce = Timer(const Duration(milliseconds: 400), () {
@@ -1067,7 +1229,7 @@ class _HomePageState extends State<HomePage> {
                   });
                 },
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 12),
               Row(
                 children: [
                   Expanded(
@@ -1087,22 +1249,107 @@ class _HomePageState extends State<HomePage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 8),
-              Center(
-                child: FilledButton.icon(
-                  onPressed: _showWhatShouldWePlay,
-                  icon: const Icon(Icons.casino_outlined),
-                  label: const Text('What Should We Play?'),
-                  style: FilledButton.styleFrom(
-                    backgroundColor: Colors.purple,
-                  ),
+              const SizedBox(height: 4),
+
+              // Fixed BGG header (stays above the scrollable list)
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                child: Row(
+                  children: [
+                    Text(
+                      'BoardGameGeek library',
+                      style: Theme.of(context).textTheme.titleMedium,
+                    ),
+                    if (_isSearchingBgg) ...[
+                      const SizedBox(width: 8),
+                      const SizedBox(
+                        width: 14,
+                        height: 14,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ],
+                  ],
                 ),
               ),
+
+              Expanded(
+                child: Builder(
+                  builder: (context) {
+                    if (_isSearchingBgg) {
+                      return const Center(
+                        child: CircularProgressIndicator(),
+                      );
+                    } else if (_bggSearchResults.isEmpty && _searchText.trim().length >= 2) {
+                      return const Center(
+                        child: Text(
+                          'No BGG results. Try a different search term.',
+                          textAlign: TextAlign.center,
+                        ),
+                      );
+                    } else if (_bggSearchResults.isEmpty) {
+                      return const Center(
+                        child: Text(
+                          'Search above to explore BGG\'s full library (150k+ games).',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.grey),
+                        ),
+                      );
+                    } else {
+                      final itemCount = _bggSearchResults.length + (_hasMoreResults ? 1 : 0);
+                      return ListView.separated(
+                        itemCount: itemCount,
+                        separatorBuilder: (context, index) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          if (_hasMoreResults && index == _bggSearchResults.length) {
+                            return ListTile(
+                              title: const Center(child: Text('Load more results...')),
+                              onTap: _isSearchingBgg ? null : _loadMoreBggResults,
+                              trailing: _isSearchingBgg
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2),
+                                    )
+                                  : null,
+                            );
+                          }
+                          final game = _bggSearchResults[index];
+                          final theme = Theme.of(context);
+                          return ListTile(
+                            title: Text(
+                              game.name,
+                              style: theme.textTheme.titleMedium,
+                            ),
+                            subtitle: Text(
+                              game.year.isNotEmpty
+                                  ? '${game.year} · ${game.description ?? "Board Game"}'
+                                  : (game.description ?? "Board Game"),
+                              style: theme.textTheme.bodySmall,
+                            ),
+                            trailing: const Icon(Icons.chevron_right),
+                            onTap: () => _viewGame(game),
+                          );
+                        },
+                      );
+                    }
+                  },
+                ),
+              ),
+
+              // Bottom actions (compact to avoid overflow)
               const SizedBox(height: 8),
               Wrap(
                 alignment: WrapAlignment.center,
                 spacing: 8,
                 children: [
+                  FilledButton.icon(
+                    onPressed: _showWhatShouldWePlay,
+                    icon: const Icon(Icons.casino_outlined),
+                    label: const Text('What Should We Play?'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: Colors.purple,
+                    ),
+                  ),
                   OutlinedButton.icon(
                     onPressed: _showCollection,
                     icon: const Icon(Icons.collections_bookmark),
@@ -1113,115 +1360,16 @@ class _HomePageState extends State<HomePage> {
                     icon: const Icon(Icons.shopping_cart),
                     label: Text('Wishlist (${_wishlist.length})'),
                   ),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: TextButton.icon(
-                  onPressed: _showManualEntry,
-                  icon: const Icon(Icons.edit),
-                  label: const Text('Add manual entry'),
-                ),
-              ),
-              const SizedBox(height: 16),
-              Expanded(
-                child: SingleChildScrollView(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      // BGG library results (primary game list - search the full library)
-                      Row(
-                        children: [
-                          Text(
-                            'BoardGameGeek library',
-                            style: Theme.of(context).textTheme.titleMedium,
-                          ),
-                          if (_isSearchingBgg) ...[
-                            const SizedBox(width: 8),
-                            const SizedBox(
-                              width: 14,
-                              height: 14,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-
-                      if (_isSearchingBgg)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 8),
-                          child: Text(
-                            'Searching BoardGameGeek...',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        )
-                      else if (_bggSearchResults.isEmpty && _searchText.trim().length >= 2)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: Text(
-                            'No BGG results. Try a different search term.',
-                            textAlign: TextAlign.center,
-                          ),
-                        )
-                      else if (_bggSearchResults.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: Text(
-                            'Search above to explore the full BoardGameGeek library.\nPopular games are shown by default.',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(color: Colors.grey),
-                          ),
-                        )
-                      else
-                        ..._bggSearchResults.map((game) => Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: GameCard(
-                            game: game,
-                            onTap: () => _viewGame(game),
-                          ),
-                        )),
-
-                      const SizedBox(height: 24),
-                    ],
+                  TextButton.icon(
+                    onPressed: _showManualEntry,
+                    icon: const Icon(Icons.edit),
+                    label: const Text('Add manual entry'),
                   ),
-                ),
+                ],
               ),
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class GameCard extends StatelessWidget {
-  final Game game;
-  final VoidCallback onTap;
-
-  const GameCard({super.key, required this.game, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Card(
-      elevation: 2,
-      child: ListTile(
-        onTap: onTap,
-        title: Text(
-          game.name,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.titleMedium,
-        ),
-        subtitle: Text(
-          '${game.year} · ${game.description ?? "Board Game"}',
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-          style: theme.textTheme.bodySmall,
-        ),
-        trailing: const Icon(Icons.chevron_right),
       ),
     );
   }
@@ -1252,6 +1400,29 @@ class GameDetailPage extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
+          if (game.imageUrl != null && game.imageUrl!.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: CachedNetworkImage(
+                  imageUrl: game.imageUrl!,
+                  height: 220,
+                  width: double.infinity,
+                  fit: BoxFit.contain,
+                  placeholder: (context, url) => Container(
+                    height: 220,
+                    color: Colors.grey.shade200,
+                    child: const Center(child: CircularProgressIndicator()),
+                  ),
+                  errorWidget: (context, url, error) => Container(
+                    height: 220,
+                    color: Colors.grey.shade200,
+                    child: const Icon(Icons.image_not_supported, size: 48),
+                  ),
+                ),
+              ),
+            ),
           Text(game.name, style: Theme.of(context).textTheme.displaySmall),
           const SizedBox(height: 4),
           Text(game.year),
@@ -1487,7 +1658,32 @@ class GameDetailPage extends StatelessWidget {
                 ? const Text('No expansions found.')
                 : Column(
                     children: game.expansions
-                        .map((e) => ListTile(dense: true, title: Text(e.name)))
+                        .map((e) => ListTile(
+                              dense: true,
+                              title: Text(e.name),
+                              trailing: const Icon(Icons.chevron_right, size: 16),
+                              onTap: () async {
+                                // Fetch full details for the expansion so we get its box art
+                                final fullExp = await BggService().getGameDetails(e.id);
+                                if (fullExp != null && mounted) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => GameDetailPage(game: fullExp),
+                                    ),
+                                  );
+                                } else if (mounted) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => GameDetailPage(
+                                        game: Game(id: e.id, name: e.name, year: ''),
+                                      ),
+                                    ),
+                                  );
+                                }
+                              },
+                            ))
                         .toList(),
                   ),
           ),
