@@ -8,6 +8,7 @@ class Game {
   final String minAge;
   final double? weight;
   final int? rank;
+  final double? rating; // BGG community average rating (1-10)
   final String? imageUrl;
   final String? description; // For manual and samples
   final List<String> categories;
@@ -26,6 +27,7 @@ class Game {
     this.minAge = '',
     this.weight,
     this.rank,
+    this.rating,
     this.imageUrl,
     this.description,
     this.categories = const [],
@@ -60,6 +62,7 @@ class Game {
 
   String get weightString => weight != null ? '${weight!.toStringAsFixed(1)}/5' : '?';
   String get rankString => rank != null ? '#$rank' : 'Unranked';
+  String get ratingString => rating != null ? rating!.toStringAsFixed(1) : 'Unrated';
 
   factory Game.fromJson(Map<String, dynamic> json) {
     return Game(
@@ -72,6 +75,7 @@ class Game {
       minAge: json['min_age'] ?? '',
       weight: (json['weight'] as num?)?.toDouble(),
       rank: json['rank'] as int?,
+      rating: (json['rating'] as num?)?.toDouble(),
       imageUrl: json['image'],
       description: json['description'],
       categories: List<String>.from(json['categories'] ?? []),
@@ -98,6 +102,7 @@ class Game {
         'min_age': minAge,
         'weight': weight,
         'rank': rank,
+        'rating': rating,
         'image': imageUrl,
         'description': description,
         'categories': categories,

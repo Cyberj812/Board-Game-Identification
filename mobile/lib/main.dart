@@ -134,6 +134,13 @@ class _HomePageState extends State<HomePage> {
   int _searchStart = 0;
   bool _hasMoreResults = true;
 
+  // Advanced search filters
+  int? _minPlayersFilter;
+  int? _maxPlayersFilter;
+  double? _minWeightFilter;
+  double? _maxWeightFilter;
+  double? _minRatingFilter;
+
   final _picker = ImagePicker();
   final _ocr = OcrService();
   final _bgg = BggService();
@@ -223,14 +230,94 @@ class _HomePageState extends State<HomePage> {
     return _levenshtein(n, q) <= maxDist;
   }
 
+  bool _matchesFilters(Game g) {
+    if (_minPlayersFilter != null && g.maxPlayers > 0 && g.maxPlayers < _minPlayersFilter!) {
+      return false;
+    }
+    if (_maxPlayersFilter != null && g.minPlayers > 0 && g.minPlayers > _maxPlayersFilter!) {
+      return false;
+    }
+    if (_minWeightFilter != null && g.weight != null && g.weight! < _minWeightFilter!) {
+      return false;
+    }
+    if (_maxWeightFilter != null && g.weight != null && g.weight! > _maxWeightFilter!) {
+      return false;
+    }
+    if (_minRatingFilter != null && g.rating != null && g.rating! < _minRatingFilter!) {
+      return false;
+    }
+    return true;
+  }
+
+  Future<List<Game>> _enrichGames(List<Game> partials) async {
+    if (partials.isEmpty) return [];
+    final futures = partials.map((g) async {
+      try {
+        final d = await _bgg.getGameDetails(g.id);
+        return d ?? g;
+      } catch (_) {
+        return g;
+      }
+    });
+    return await Future.wait(futures);
+  }
+
+  bool _hasAnyFilter() {
+    return _minPlayersFilter != null ||
+        _maxPlayersFilter != null ||
+        _minWeightFilter != null ||
+        _maxWeightFilter != null ||
+        _minRatingFilter != null;
+  }
+
+  Widget _buildActiveFilterSummary() {
+    if (!_hasAnyFilter()) {
+      return const Text('No filters', style: TextStyle(fontSize: 12, color: Colors.grey));
+    }
+    final parts = <String>[];
+    if (_minPlayersFilter != null || _maxPlayersFilter != null) {
+      final minP = _minPlayersFilter ?? 1;
+      final maxP = _maxPlayersFilter ?? 99;
+      parts.add('Players: $minP-${maxP == 99 ? '+' : maxP}');
+    }
+    if (_minWeightFilter != null || _maxWeightFilter != null) {
+      final minW = _minWeightFilter?.toStringAsFixed(1) ?? '1';
+      final maxW = _maxWeightFilter?.toStringAsFixed(1) ?? '5';
+      parts.add('Weight: $minW-$maxW');
+    }
+    if (_minRatingFilter != null) {
+      parts.add('Rating \u2265 ${_minRatingFilter!.toStringAsFixed(1)}');
+    }
+    return Text(parts.join('  •  '), style: const TextStyle(fontSize: 12, color: Colors.deepPurple));
+  }
+
+  void _clearSearchFilters() {
+    setState(() {
+      _minPlayersFilter = null;
+      _maxPlayersFilter = null;
+      _minWeightFilter = null;
+      _maxWeightFilter = null;
+      _minRatingFilter = null;
+    });
+    final q = _searchText.trim();
+    if (q.length >= 2) {
+      _searchBggLibrary(q);
+    } else {
+      setState(() => _bggSearchResults = []);
+    }
+  }
+
   Future<void> _searchBggLibrary(String query) async {
     final q = query.trim();
     if (q.length < 2) {
-      setState(() {
-        _bggSearchResults = _bgg.getPopularGames();
-        _isSearchingBgg = false;
-        _hasMoreResults = false;
-      });
+      if (mounted) {
+        setState(() {
+          _bggSearchResults = [];
+          _isSearchingBgg = false;
+          _hasMoreResults = false;
+          _searchStart = 0;
+        });
+      }
       return;
     }
 
@@ -241,59 +328,39 @@ class _HomePageState extends State<HomePage> {
     });
 
     try {
-      // Get initial results from BGG search (server-side matching on the query)
+      // Get initial results from BGG search
       final rawResults = await _bgg.searchGames(q, limit: 25, start: 0);
 
-      // Use BGG search results directly (relevant matches to entered text)
-      List<Game> augmented = List.from(rawResults);
+      // Enrich ALL results so filters (weight/rating/players) can be applied reliably
+      final enriched = await _enrichGames(rawResults);
 
-      // Enrich top results with images/box art from details (for list preview)
-      // Limit to first 10 to keep search fast
-      final toEnrich = rawResults.take(10).toList();
-      if (toEnrich.isNotEmpty) {
-        // Ensure each future returns a non-null Game (fallback to the original partial game)
-        final futures = toEnrich.map((g) async {
-          try {
-            final details = await _bgg.getGameDetails(g.id);
-            return details ?? g; // if details is null, fall back to the original 'g'
-          } catch (_) {
-            return g; // on error, fall back to original
-          }
-        });
-
-        // Now 'enriched' is List<Game> (non-nullable)
-        final List<Game> enriched = await Future.wait(futures);
-
-        for (int i = 0; i < enriched.length; i++) {
-          if (i < augmented.length) {
-            // Replace with enriched version (has imageUrl etc.)
-            final idx = augmented.indexWhere((gg) => gg.id == enriched[i].id);
-            if (idx != -1) augmented[idx] = enriched[i];
-          }
-        }
-      }
-
-      // Augment top result with expansions (for Catan etc.)
+      // Start with enriched, optionally augment expansions from top match
+      List<Game> augmented = List.from(enriched);
       if (rawResults.isNotEmpty) {
         try {
-          final top = rawResults.first;
-          final details = await _bgg.getGameDetails(top.id);
-          if (details != null && details.expansions.isNotEmpty) {
-            for (final exp in details.expansions) {
-              if (!augmented.any((g) => g.id == exp.id)) {
-                augmented.add(Game(id: exp.id, name: exp.name, year: ''));
+          final top = enriched.firstWhere((g) => g.id == rawResults.first.id, orElse: () => enriched.first);
+          // If the top already has expansions from enrichment, use them; otherwise fetch again
+          if (top.expansions.isEmpty) {
+            final details = await _bgg.getGameDetails(top.id);
+            if (details != null && details.expansions.isNotEmpty) {
+              for (final exp in details.expansions) {
+                if (!augmented.any((g) => g.id == exp.id)) {
+                  augmented.add(Game(id: exp.id, name: exp.name, year: ''));
+                }
               }
             }
           }
         } catch (_) {}
       }
 
-      // Dedup user games
+      // Dedup against user collections + apply advanced filters
       final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
-      final filteredResults = augmented.where((g) => !userIds.contains(g.id)).toList();
+      final filtered = augmented
+          .where((g) => !userIds.contains(g.id) && _matchesFilters(g))
+          .toList();
 
-      // Cap at 25
-      final limited = filteredResults.take(25).toList();
+      // Cap first page at 25
+      final limited = filtered.take(25).toList();
 
       if (mounted) {
         setState(() {
@@ -303,7 +370,6 @@ class _HomePageState extends State<HomePage> {
         });
       }
     } catch (_) {
-      // on error, show nothing or previous; avoid dumping whole library
       if (mounted) {
         setState(() {
           _bggSearchResults = [];
@@ -330,28 +396,33 @@ class _HomePageState extends State<HomePage> {
       if (moreRaw.isEmpty) {
         if (mounted) setState(() => _hasMoreResults = false);
       } else {
-        final qLower = q.toLowerCase();
         final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
 
-        final newOnes = moreRaw
-            .where((g) =>
-                !userIds.contains(g.id) &&
-                !_bggSearchResults.any((e) => e.id == g.id) &&
-                _fuzzyMatch(g.name, q, maxDist: 2))
-            .toList();
+        // Enrich for filter data (players/weight/rating)
+        final enrichedMore = await _enrichGames(moreRaw);
 
-        // Augment expansions for new top if relevant
-        List<Game> toAdd = List.from(newOnes);
-        if (newOnes.isNotEmpty) {
+        // Filter new candidates: not already shown, not user-owned, match current text loosely + active filters
+        final qLower = q.toLowerCase();
+        final newCandidates = enrichedMore.where((g) {
+          if (userIds.contains(g.id)) return false;
+          if (_bggSearchResults.any((e) => e.id == g.id)) return false;
+          if (!_matchesFilters(g)) return false;
+          // keep reasonable match to query
+          return g.name.toLowerCase().contains(qLower) || _fuzzyMatch(g.name, q, maxDist: 2);
+        }).toList();
+
+        // Optionally pull expansions for the first new one if it matches
+        List<Game> toAdd = List.from(newCandidates);
+        if (newCandidates.isNotEmpty) {
           try {
-            final topNew = newOnes.first;
-            if (_fuzzyMatch(topNew.name, q, maxDist: 2)) {
+            final topNew = newCandidates.first;
+            if (topNew.expansions.isEmpty && _fuzzyMatch(topNew.name, q, maxDist: 2)) {
               final details = await _bgg.getGameDetails(topNew.id);
-              if (details != null && details.expansions.isNotEmpty) {
+              if (details != null) {
                 for (final exp in details.expansions) {
                   if (!toAdd.any((g) => g.id == exp.id) &&
                       !_bggSearchResults.any((e) => e.id == exp.id) &&
-                      _fuzzyMatch(exp.name, q, maxDist: 2)) {
+                      _matchesFilters(Game(id: exp.id, name: exp.name, year: ''))) {
                     toAdd.add(Game(id: exp.id, name: exp.name, year: ''));
                   }
                 }
@@ -359,14 +430,6 @@ class _HomePageState extends State<HomePage> {
             }
           } catch (_) {}
         }
-
-        // Sort new batch
-        toAdd.sort((a, b) {
-          final da = _levenshtein(a.name.toLowerCase(), qLower);
-          final db = _levenshtein(b.name.toLowerCase(), qLower);
-          if (da != db) return da.compareTo(db);
-          return a.name.length.compareTo(b.name.length);
-        });
 
         if (mounted) {
           setState(() {
@@ -522,6 +585,210 @@ class _HomePageState extends State<HomePage> {
           onAddToWishlist: () => _addToWishlist(game),
         ),
       ),
+    );
+  }
+
+  void _showSearchFilters() {
+    // Local copies for the sheet so we can live-update
+    int? minP = _minPlayersFilter;
+    int? maxP = _maxPlayersFilter;
+    double? minW = _minWeightFilter;
+    double? maxW = _maxWeightFilter;
+    double? minR = _minRatingFilter;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            void updateParentAndSearch() {
+              setState(() {
+                _minPlayersFilter = minP;
+                _maxPlayersFilter = maxP;
+                _minWeightFilter = minW;
+                _maxWeightFilter = maxW;
+                _minRatingFilter = minR;
+              });
+              final q = _searchText.trim();
+              if (q.length >= 2) {
+                // Restart search with filters applied (will enrich + filter)
+                _searchBggLibrary(q);
+              }
+            }
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: SingleChildScrollView(
+                child: Container(
+                  padding: const EdgeInsets.all(20),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.tune),
+                          const SizedBox(width: 8),
+                          Text('Search Filters', style: Theme.of(context).textTheme.titleLarge),
+                          const Spacer(),
+                          TextButton(
+                            onPressed: () {
+                              minP = null; maxP = null; minW = null; maxW = null; minR = null;
+                              setSheetState(() {});
+                              updateParentAndSearch();
+                            },
+                            child: const Text('Reset all'),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close),
+                            onPressed: () => Navigator.pop(sheetContext),
+                          ),
+                        ],
+                      ),
+                      const Divider(),
+                      const SizedBox(height: 8),
+
+                      // Player count
+                      Text('Player Count', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: [
+                          const Text('Min:'),
+                          const SizedBox(width: 8),
+                          DropdownButton<int?>(
+                            value: minP,
+                            hint: const Text('Any'),
+                            items: [null, 1, 2, 3, 4, 5, 6, 7, 8]
+                                .map((v) => DropdownMenuItem(value: v, child: Text(v == null ? 'Any' : '$v')))
+                                .toList(),
+                            onChanged: (v) {
+                              setSheetState(() => minP = v);
+                              updateParentAndSearch();
+                            },
+                          ),
+                          const SizedBox(width: 16),
+                          const Text('Max:'),
+                          const SizedBox(width: 8),
+                          DropdownButton<int?>(
+                            value: maxP,
+                            hint: const Text('Any'),
+                            items: [null, 2, 3, 4, 5, 6, 7, 8, 10]
+                                .map((v) => DropdownMenuItem(value: v, child: Text(v == null ? 'Any' : (v >= 10 ? '10+' : '$v'))))
+                                .toList(),
+                            onChanged: (v) {
+                              setSheetState(() => maxP = v);
+                              updateParentAndSearch();
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Weight range
+                      Text('Weight (Complexity 1-5)', style: Theme.of(context).textTheme.titleMedium),
+                      const SizedBox(height: 4),
+                      RangeSlider(
+                        values: RangeValues(minW ?? 1.0, maxW ?? 5.0),
+                        min: 1.0,
+                        max: 5.0,
+                        divisions: 40,
+                        labels: RangeLabels(
+                          (minW ?? 1.0).toStringAsFixed(1),
+                          (maxW ?? 5.0).toStringAsFixed(1),
+                        ),
+                        onChanged: (vals) {
+                          setSheetState(() {
+                            minW = vals.start;
+                            maxW = vals.end;
+                          });
+                        },
+                        onChangeEnd: (_) => updateParentAndSearch(),
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Min: ${(minW ?? 1.0).toStringAsFixed(1)}'),
+                          Text('Max: ${(maxW ?? 5.0).toStringAsFixed(1)}'),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Min rating
+                      Text('Minimum BGG Rating', style: Theme.of(context).textTheme.titleMedium),
+                      Slider(
+                        value: minR ?? 0.0,
+                        min: 0.0,
+                        max: 10.0,
+                        divisions: 20,
+                        label: (minR ?? 0.0).toStringAsFixed(1),
+                        onChanged: (v) {
+                          setSheetState(() => minR = v > 0.5 ? v : null);
+                        },
+                        onChangeEnd: (_) => updateParentAndSearch(),
+                      ),
+                      Text(minR != null && minR! > 0 ? 'Min rating: ${minR!.toStringAsFixed(1)}' : 'Any rating'),
+                      const SizedBox(height: 16),
+
+                      // Chips for quick presets
+                      Wrap(
+                        spacing: 6,
+                        children: [
+                          ActionChip(
+                            label: const Text('Light (≤2.5)'),
+                            onPressed: () {
+                              setSheetState(() { minW = null; maxW = 2.5; });
+                              updateParentAndSearch();
+                            },
+                          ),
+                          ActionChip(
+                            label: const Text('Medium (2-3.5)'),
+                            onPressed: () {
+                              setSheetState(() { minW = 2.0; maxW = 3.5; });
+                              updateParentAndSearch();
+                            },
+                          ),
+                          ActionChip(
+                            label: const Text('Heavy (≥3.5)'),
+                            onPressed: () {
+                              setSheetState(() { minW = 3.5; maxW = 5.0; });
+                              updateParentAndSearch();
+                            },
+                          ),
+                          ActionChip(
+                            label: const Text('7+ rating'),
+                            onPressed: () {
+                              setSheetState(() => minR = 7.0);
+                              updateParentAndSearch();
+                            },
+                          ),
+                          ActionChip(
+                            label: const Text('2-4 players'),
+                            onPressed: () {
+                              setSheetState(() { minP = 2; maxP = 4; });
+                              updateParentAndSearch();
+                            },
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        width: double.infinity,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(sheetContext),
+                          child: const Text('Done'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -1256,7 +1523,29 @@ class _HomePageState extends State<HomePage> {
                   });
                 },
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 6),
+              // Optional advanced filters row
+              Row(
+                children: [
+                  Expanded(
+                    child: _buildActiveFilterSummary(),
+                  ),
+                  TextButton.icon(
+                    onPressed: _showSearchFilters,
+                    icon: const Icon(Icons.tune, size: 18),
+                    label: const Text('Filters'),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(horizontal: 8),
+                    ),
+                  ),
+                  if (_hasAnyFilter())
+                    TextButton(
+                      onPressed: _clearSearchFilters,
+                      child: const Text('Clear', style: TextStyle(fontSize: 12)),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 4),
               Row(
                 children: [
                   Expanded(
@@ -1361,9 +1650,12 @@ class _HomePageState extends State<HomePage> {
                               style: theme.textTheme.titleMedium,
                             ),
                             subtitle: Text(
-                              game.year.isNotEmpty
-                                  ? '${game.year} · ${game.description ?? "Board Game"}'
-                                  : (game.description ?? "Board Game"),
+                              [
+                                if (game.year.isNotEmpty) game.year,
+                                if (game.minPlayers > 0 || game.maxPlayers > 0) '${game.playerCount} players',
+                                game.weightString,
+                                if (game.rating != null) '${game.rating!.toStringAsFixed(1)}★',
+                              ].where((s) => s.isNotEmpty && s != '?').join(' · '),
                               style: theme.textTheme.bodySmall,
                             ),
                             trailing: const Icon(Icons.chevron_right),
@@ -1501,6 +1793,7 @@ class GameDetailPage extends StatelessWidget {
             children: [
               _StatItem(label: 'Players', value: game.playerCount),
               _StatItem(label: 'Weight', value: game.weightString),
+              _StatItem(label: 'Rating', value: game.ratingString),
               _StatItem(label: 'Rank', value: game.rankString),
               _StatItem(label: 'Time', value: game.playtime.isNotEmpty ? '${game.playtime} min' : '?'),
             ],

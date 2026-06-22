@@ -87,8 +87,12 @@ class BggService {
 
     double? weight;
     int? rank;
+    double? rating;
     final weightEl = stats?.findElements('averageweight').firstOrNull;
     if (weightEl != null) weight = double.tryParse(weightEl.getAttribute('value') ?? '');
+
+    final avgEl = stats?.findElements('average').firstOrNull;
+    if (avgEl != null) rating = double.tryParse(avgEl.getAttribute('value') ?? '');
 
     final ranks = stats?.findElements('ranks').firstOrNull?.findElements('rank') ?? [];
     for (final r in ranks) {
@@ -125,6 +129,7 @@ class BggService {
       minAge: getValue('minage'),
       weight: weight,
       rank: rank,
+      rating: rating,
       imageUrl: item.findElements('image').firstOrNull?.innerText,
       categories: cats,
       mechanics: mechs,
@@ -143,6 +148,7 @@ class BggService {
       playtime: '40-70',
       weight: 2.4,
       rank: 38,
+      rating: 8.1,
       digitalPlatforms: [
         DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
         DigitalPlatform(name: 'Board Game Arena', url: 'https://boardgamearena.com/'),
@@ -170,6 +176,7 @@ class BggService {
       playtime: '60-120',
       weight: 2.3,
       rank: 400,
+      rating: 7.2,
       digitalPlatforms: [
         DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
         DigitalPlatform(name: 'Catan Universe (Steam)', url: 'https://store.steampowered.com/app/544730/Catan_Universe/'),
@@ -191,6 +198,7 @@ class BggService {
       playtime: '90-150',
       weight: 3.7,
       rank: 4,
+      rating: 8.7,
     ),
     Game(
       id: '199792',
