@@ -195,42 +195,6 @@ class _HomePageState extends State<HomePage> {
 
 
 
-  // Levenshtein distance for typo tolerance (small edit distance = close match)
-  int _levenshtein(String s, String t) {
-    if (s == t) return 0;
-    if (s.isEmpty) return t.length;
-    if (t.isEmpty) return s.length;
-
-    List<int> v0 = List.filled(t.length + 1, 0);
-    List<int> v1 = List.filled(t.length + 1, 0);
-
-    for (int i = 0; i <= t.length; i++) v0[i] = i;
-
-    for (int i = 0; i < s.length; i++) {
-      v1[0] = i + 1;
-      for (int j = 0; j < t.length; j++) {
-        int cost = (s[i] == t[j]) ? 0 : 1;
-        v1[j + 1] = [
-          v1[j] + 1,
-          v0[j + 1] + 1,
-          v0[j] + cost
-        ].reduce((a, b) => a < b ? a : b);
-      }
-      final temp = v0;
-      v0 = v1;
-      v1 = temp;
-    }
-    return v0[t.length];
-  }
-
-  bool _fuzzyMatch(String name, String query, {int maxDist = 2}) {
-    final n = name.toLowerCase().trim();
-    final q = query.toLowerCase().trim();
-    if (n.isEmpty || q.isEmpty) return false;
-    if (n.contains(q) || q.contains(n)) return true;
-    return _levenshtein(n, q) <= maxDist;
-  }
-
   bool _matchesFilters(Game g) {
     if (_minPlayersFilter != null && g.maxPlayers > 0 && g.maxPlayers < _minPlayersFilter!) {
       return false;
