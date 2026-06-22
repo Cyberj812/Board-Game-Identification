@@ -333,14 +333,30 @@ class _HomePageState extends State<HomePage> {
       // When the user provides a real query use it.
       // For "empty box" + filters only (short/empty query but filters active), use a broad term
       // so BGG returns a large pool of games. We then enrich + client-filter to the desired criteria.
-      final searchTerm = hasText ? q : 'the';
-      final fetchLimit = hasText ? 75 : 100;
+      String searchTerm = hasText ? q : 'the';
+      // For pure filter discovery ("empty box" or no text), rotate a few common terms so we get
+      // a more varied pool of candidates to filter against the weight/player/rating params.
+      if (!hasText) {
+        final seeds = ['the', 'a', 'game', 'and', 'to'];
+        searchTerm = seeds[DateTime.now().millisecondsSinceEpoch % seeds.length];
+      }
+      final fetchLimit = hasText ? 30 : 50;
 
       _lastBggSearchTerm = searchTerm;
       final rawResults = await _bgg.searchGames(searchTerm, limit: fetchLimit, start: 0);
 
-      // Enrich ALL results so filters (weight/rating/players) can be applied reliably
-      final enriched = await _enrichGames(rawResults);
+      // Enrich only the first ~15-20 so we don't hammer BGG with dozens of /thing calls at once
+      // (rate limits were likely breaking searches). Stubs for the rest still appear in results
+      // (they pass filters if no stat data, and hydrate on tap).
+      final toEnrich = rawResults.take(18).toList();
+      final enrichedTop = await _enrichGames(toEnrich);
+
+      // Merge enriched data back into the full raw list (preserve order and all results)
+      final enriched = List<Game>.from(rawResults);
+      for (final e in enrichedTop) {
+        final idx = enriched.indexWhere((g) => g.id == e.id);
+        if (idx != -1) enriched[idx] = e;
+      }
 
       // Start with enriched, optionally augment expansions from top match
       List<Game> augmented = List.from(enriched);
@@ -410,8 +426,15 @@ class _HomePageState extends State<HomePage> {
       } else {
         final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
 
-        // Enrich for filter data (players/weight/rating)
-        final enrichedMore = await _enrichGames(moreRaw);
+        // Enrich modestly for this page to avoid rate limit issues
+        final toEnrichMore = moreRaw.take(15).toList();
+        final enrichedTopMore = await _enrichGames(toEnrichMore);
+
+        final enrichedMore = List<Game>.from(moreRaw);
+        for (final e in enrichedTopMore) {
+          final idx = enrichedMore.indexWhere((g) => g.id == e.id);
+          if (idx != -1) enrichedMore[idx] = e;
+        }
 
         // Accept what BGG returned for the page (BGG already matched the query).
         // Only filter: not user-owned, not already in current results, and pass active filters.

@@ -22,40 +22,59 @@ class BggService {
   Future<List<Game>> searchGames(String query, {int limit = 10, int start = 0}) async {
     if (query.trim().length < 2) return [];
 
-    // Build URI. Note: BGG /search pagination with start is unreliable; we still pass it for forward compat.
-    final uri = Uri.parse('$_base/search?query=${Uri.encodeComponent(query)}&type=boardgame&start=$start');
+    // Only include start if >0. BGG search pagination is unreliable; omitting for initial searches helps.
+    String url = '$_base/search?query=${Uri.encodeComponent(query)}&type=boardgame';
+    if (start > 0) url += '&start=$start';
+    final uri = Uri.parse(url);
 
-    http.Response resp;
-    try {
-      resp = await http.get(uri, headers: _headers);
-    } catch (_) {
-      return [];
-    }
+    List<Game> parsed = [];
+    int attempt = 0;
+    const maxAttempts = 2;
 
-    // BGG often returns 202 "Accepted" (processing). Retry once after a short delay.
-    if (resp.statusCode == 202) {
-      await Future.delayed(const Duration(milliseconds: 1500));
+    while (attempt < maxAttempts && parsed.isEmpty) {
+      attempt++;
+      if (attempt > 1) {
+        await Future.delayed(const Duration(milliseconds: 1600));
+      }
+
+      http.Response resp;
       try {
         resp = await http.get(uri, headers: _headers);
       } catch (_) {
-        return [];
+        continue;
       }
-    }
 
-    // Always attempt to parse if we have a body. Some non-200 responses still contain useful data.
-    if (resp.body.isNotEmpty) {
-      try {
-        final parsed = _parseSearchResults(resp.body, limit);
-        if (parsed.isNotEmpty) {
-          return parsed;
+      // Handle explicit 202 or cases where BGG returns 200 but no items yet (processing)
+      if (resp.statusCode == 202 || resp.statusCode == 200) {
+        if (resp.body.isNotEmpty) {
+          try {
+            parsed = _parseSearchResults(resp.body, limit);
+          } catch (_) {
+            parsed = [];
+          }
         }
-      } catch (_) {
-        // fall through to empty
+      }
+
+      // If we got something, use it
+      if (parsed.isNotEmpty) {
+        return parsed;
       }
     }
 
-    // No usable BGG results. Return empty (do NOT pollute the library search with the tiny popular list).
-    return [];
+    // API gave us nothing usable after retries. Fall back to the known popular games so
+    // at least the common ones can be found by typing (same as photo scan fallback behavior).
+    // Real BGG results are preferred when the API succeeds.
+    return _fallbackToPopular(query, limit);
+  }
+
+  List<Game> _fallbackToPopular(String query, int limit) {
+    final q = query.toLowerCase().trim();
+    if (q.isEmpty) return [];
+    return _popularGames.where((g) {
+      final n = g.name.toLowerCase();
+      // Simple match: contains either way (good enough for the known titles)
+      return n.contains(q) || q.contains(n);
+    }).take(limit).toList();
   }
 
   List<Game> _parseSearchResults(String body, int limit) {
