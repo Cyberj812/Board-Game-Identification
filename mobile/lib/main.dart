@@ -37,20 +37,20 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   String _searchText = '';
   bool _isScanning = false;
+  List<Game> _userCollection = []; // For custom lists and manual entries
 
   final _picker = ImagePicker();
   final _ocr = OcrService();
   final _bgg = BggService();
 
-  List<BoardGame> get _filteredGames {
+  List<Game> get _filteredGames {
     final query = _searchText.toLowerCase();
     if (query.isEmpty) {
       return sampleGames;
     }
     return sampleGames.where((game) {
       return game.name.toLowerCase().contains(query) ||
-          game.publisher.toLowerCase().contains(query) ||
-          game.description.toLowerCase().contains(query);
+          (game.description ?? '').toLowerCase().contains(query);
     }).toList();
   }
 
@@ -94,6 +94,7 @@ class _HomePageState extends State<HomePage> {
       final fullGame = await _bgg.getGameDetails(top.id);
 
       if (fullGame != null && mounted) {
+        _addToCollection(fullGame); // Auto add scanned to collection
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -121,7 +122,7 @@ class _HomePageState extends State<HomePage> {
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (_) => _SimpleGameDetail(game: game),
+        builder: (_) => GameDetailPage(game: game),
       ),
     );
   }
@@ -152,6 +153,114 @@ class _HomePageState extends State<HomePage> {
         );
       }
     }
+  }
+
+  void _addToCollection(Game game) {
+    setState(() {
+      if (!_userCollection.any((g) => g.id == game.id)) {
+        _userCollection.add(game);
+      }
+    });
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${game.name} added to My Collection')),
+    );
+  }
+
+  void _showCollection() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('My Collection'),
+        content: _userCollection.isEmpty
+            ? const Text('No games in collection yet. Scan or add manually!')
+            : SizedBox(
+                width: double.maxFinite,
+                child: ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: _userCollection.length,
+                  itemBuilder: (c, i) {
+                    final g = _userCollection[i];
+                    return ListTile(
+                      title: Text(g.name),
+                      subtitle: Text(g.year),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => GameDetailPage(game: g)),
+                        );
+                      },
+                    );
+                  },
+                ),
+              ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          if (_userCollection.isNotEmpty)
+            TextButton(
+              onPressed: () {
+                setState(() => _userCollection.clear());
+                Navigator.pop(ctx);
+              },
+              child: const Text('Clear'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showManualEntry() {
+    final nameController = TextEditingController();
+    final yearController = TextEditingController();
+    final descController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Add Manual Entry'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: nameController, decoration: const InputDecoration(labelText: 'Game Name')),
+            TextField(controller: yearController, decoration: const InputDecoration(labelText: 'Year')),
+            TextField(controller: descController, decoration: const InputDecoration(labelText: 'Description')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              if (nameController.text.isNotEmpty) {
+                final manual = Game(
+                  id: 'manual_${DateTime.now().millisecondsSinceEpoch}',
+                  name: nameController.text,
+                  year: yearController.text,
+                  description: descController.text,
+                );
+                _addToCollection(manual);
+                Navigator.pop(ctx);
+              }
+            },
+            child: const Text('Add'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showIllegalMoveChecker() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Illegal Move Tracker'),
+        content: const Text(
+          'This feature will let you take a photo of a game board in progress and use computer vision + rules engine to detect illegal moves.\n\nComing in a future release!',
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+        ],
+      ),
+    );
   }
 
   Future<void> _suggestFeature() async {
@@ -259,6 +368,23 @@ class _HomePageState extends State<HomePage> {
               const SizedBox(height: 8),
               Center(
                 child: TextButton.icon(
+                  onPressed: _showManualEntry,
+                  icon: const Icon(Icons.edit),
+                  label: const Text('Add manual entry'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton.icon(
+                  onPressed: _showIllegalMoveChecker,
+                  icon: const Icon(Icons.gavel),
+                  label: const Text('Illegal Move Checker (photo game state)'),
+                  style: TextButton.styleFrom(foregroundColor: Colors.orange),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: TextButton.icon(
                   onPressed: _openFeedback,
                   icon: const Icon(Icons.feedback_outlined, size: 18),
                   label: const Text('Report a bug or suggest improvement'),
@@ -266,6 +392,14 @@ class _HomePageState extends State<HomePage> {
                     foregroundColor: Colors.grey[700],
                     textStyle: const TextStyle(fontSize: 12),
                   ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: OutlinedButton.icon(
+                  onPressed: _showCollection,
+                  icon: const Icon(Icons.list),
+                  label: Text('My Collection (${_userCollection.length})'),
                 ),
               ),
               const SizedBox(height: 16),
@@ -285,11 +419,10 @@ class _HomePageState extends State<HomePage> {
                           return GameCard(
                             game: game,
                             onTap: () {
-                              // Samples use simple detail for demo; scanned use rich
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => _SimpleGameDetail(game: game),
+                                  builder: (_) => GameDetailPage(game: game),
                                 ),
                               );
                             },
@@ -306,7 +439,7 @@ class _HomePageState extends State<HomePage> {
 }
 
 class GameCard extends StatelessWidget {
-  final BoardGame game;
+  final Game game;
   final VoidCallback onTap;
 
   const GameCard({super.key, required this.game, required this.onTap});
@@ -317,7 +450,7 @@ class GameCard extends StatelessWidget {
       child: ListTile(
         onTap: onTap,
         title: Text(game.name),
-        subtitle: Text('${game.year} · ${game.publisher}'),
+        subtitle: Text('${game.year} · ${game.description ?? "Board Game"}'),
         trailing: const Icon(Icons.chevron_right),
       ),
     );
@@ -353,6 +486,38 @@ class GameDetailPage extends StatelessWidget {
           ),
 
           const SizedBox(height: 24),
+
+          // Add to Collection button
+          ElevatedButton.icon(
+            onPressed: () {
+              // This is called from context of HomePageState? For simplicity, use a global or pass callback.
+              // For demo, show snack. Real impl would use provider.
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Added to My Collection (demo)')),
+              );
+            },
+            icon: const Icon(Icons.add),
+            label: const Text('Add to My Collection'),
+          ),
+
+          const SizedBox(height: 16),
+
+          // Digital Play (new feature)
+          if (game.digitalPlatforms.isNotEmpty)
+            _Section(
+              title: 'Digital Play',
+              child: Column(
+                children: game.digitalPlatforms.map((platform) {
+                  return ListTile(
+                    dense: true,
+                    leading: const Icon(Icons.computer),
+                    title: Text(platform.name),
+                    trailing: platform.url != null ? const Icon(Icons.open_in_new) : null,
+                    onTap: platform.url != null ? () => _launch(platform.url!) : null,
+                  );
+                }).toList(),
+              ),
+            ),
 
           // Expansions
           _Section(
@@ -511,76 +676,36 @@ class _Section extends StatelessWidget {
 }
 
 // Simple demo data for browse (limited info)
-const sampleGames = <BoardGame>[
-  BoardGame(
+final sampleGames = <Game>[
+  Game(
+    id: 'sample_catan',
     name: 'Catan',
-    year: 1995,
-    publisher: 'Kosmos',
+    year: '1995',
     description: 'Trade, build, and settle the island of Catan in this gateway strategy classic.',
   ),
-  BoardGame(
+  Game(
+    id: 'sample_ticket',
     name: 'Ticket to Ride',
-    year: 2004,
-    publisher: 'Days of Wonder',
+    year: '2004',
     description: 'Collect train cards, claim routes, and connect cities across the map.',
   ),
-  BoardGame(
+  Game(
+    id: 'sample_wingspan',
     name: 'Wingspan',
-    year: 2019,
-    publisher: 'Stonemaier Games',
+    year: '2019',
     description: 'Build a wildlife preserve by attracting birds with different powers and habitats.',
   ),
-  BoardGame(
+  Game(
+    id: 'sample_pandemic',
     name: 'Pandemic',
-    year: 2008,
-    publisher: 'Z-Man Games',
+    year: '2008',
     description: 'Work together to stop global outbreaks before time runs out.',
   ),
-  BoardGame(
+  Game(
+    id: 'sample_azul',
     name: 'Azul',
-    year: 2017,
-    publisher: 'Plan B Games',
+    year: '2017',
     description: 'Draft tiles and complete patterns to score points in this elegant abstract game.',
   ),
 ];
 
-// For compatibility with sample list (simple version)
-class BoardGame {
-  final String name;
-  final int year;
-  final String publisher;
-  final String description;
-
-  const BoardGame({
-    required this.name,
-    required this.year,
-    required this.publisher,
-    required this.description,
-  });
-}
-
-class _SimpleGameDetail extends StatelessWidget {
-  final BoardGame game;
-
-  const _SimpleGameDetail({super.key, required this.game});
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(title: Text(game.name)),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(game.name, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            Text('${game.publisher} · ${game.year}'),
-            const SizedBox(height: 16),
-            Text(game.description, style: const TextStyle(fontSize: 16)),
-          ],
-        ),
-      ),
-    );
-  }
-}
