@@ -117,6 +117,7 @@ Future improvements (easy to add):
 - [ ] Snap photo of your collection and auto-build list from photo contents (multi-game detection)
 - [ ] Manual entries (add games manually without photo)
 - [ ] Illegal move tracker (take photo of game in progress to detect/flag illegal moves)
+- [ ] Digital availability section (show if a game can be played digitally and on which platforms, e.g. Board Game Arena, Tabletop Simulator, Steam, etc.)
 
 ## Mobile App (Flutter)
 
