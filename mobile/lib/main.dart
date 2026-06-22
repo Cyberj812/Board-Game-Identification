@@ -146,8 +146,8 @@ class _HomePageState extends State<HomePage> {
     super.initState();
     _loadCollection();
     _confettiController = ConfettiController(duration: const Duration(seconds: 2));
-    // Start with popular BGG games in the library view
-    _bggSearchResults = _bgg.getPopularGames();
+    // Show no games by default - only when user searches
+    _bggSearchResults = [];
     _hasMoreResults = false;
   }
 
@@ -244,38 +244,44 @@ class _HomePageState extends State<HomePage> {
       // Get initial results from BGG search (server-side matching on the query)
       final rawResults = await _bgg.searchGames(q, limit: 25, start: 0);
 
-      // Use the BGG results directly (they are the relevant close matches from the library).
-      // Fuzzy is used only for augmentation decision and sorting to allow typos.
-      final qLower = q.toLowerCase();
+      // Use BGG search results directly (relevant matches to entered text)
       List<Game> augmented = List.from(rawResults);
-      for (final match in rawResults.take(3)) {
-        if (_fuzzyMatch(match.name, q, maxDist: 2)) {
-          try {
-            final details = await _bgg.getGameDetails(match.id);
-            if (details != null && details.expansions.isNotEmpty) {
-              for (final exp in details.expansions) {
-                if (!augmented.any((g) => g.id == exp.id) &&
-                    _fuzzyMatch(exp.name, q, maxDist: 2)) {
-                  augmented.add(Game(id: exp.id, name: exp.name, year: ''));
-                }
+
+      // Enrich top results with images/box art from details (for list preview)
+      // Limit to first 10 to keep search fast
+      final toEnrich = rawResults.take(10).toList();
+      if (toEnrich.isNotEmpty) {
+        final futures = toEnrich.map((g) => _bgg.getGameDetails(g.id).catchError((_) => g));
+        final enriched = await Future.wait(futures);
+        for (int i = 0; i < enriched.length; i++) {
+          if (i < augmented.length) {
+            // Replace with enriched version (has imageUrl etc.)
+            final idx = augmented.indexWhere((gg) => gg.id == enriched[i].id);
+            if (idx != -1) augmented[idx] = enriched[i];
+          }
+        }
+      }
+
+      // Augment top result with expansions (for Catan etc.)
+      if (rawResults.isNotEmpty) {
+        try {
+          final top = rawResults.first;
+          final details = await _bgg.getGameDetails(top.id);
+          if (details != null && details.expansions.isNotEmpty) {
+            for (final exp in details.expansions) {
+              if (!augmented.any((g) => g.id == exp.id)) {
+                augmented.add(Game(id: exp.id, name: exp.name, year: ''));
               }
             }
-          } catch (_) {}
-        }
+          }
+        } catch (_) {}
       }
 
       // Dedup user games
       final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
       final filteredResults = augmented.where((g) => !userIds.contains(g.id)).toList();
 
-      // Sort by fuzzy distance (lower = better, allows typos)
-      filteredResults.sort((a, b) {
-        final da = _levenshtein(a.name.toLowerCase(), qLower);
-        final db = _levenshtein(b.name.toLowerCase(), qLower);
-        if (da != db) return da.compareTo(db);
-        return a.name.length.compareTo(b.name.length);
-      });
-
+      // Cap at 25
       final limited = filteredResults.take(25).toList();
 
       if (mounted) {
@@ -1326,6 +1332,19 @@ class _HomePageState extends State<HomePage> {
                           final game = _bggSearchResults[index];
                           final theme = Theme.of(context);
                           return ListTile(
+                            leading: game.imageUrl != null && game.imageUrl!.isNotEmpty
+                                ? ClipRRect(
+                                    borderRadius: BorderRadius.circular(4),
+                                    child: CachedNetworkImage(
+                                      imageUrl: game.imageUrl!,
+                                      width: 50,
+                                      height: 50,
+                                      fit: BoxFit.cover,
+                                      placeholder: (c, u) => Container(width: 50, height: 50, color: Colors.grey[300]),
+                                      errorWidget: (c, u, e) => Icon(Icons.image, size: 50),
+                                    ),
+                                  )
+                                : const Icon(Icons.videogame_asset, size: 50),
                             title: Text(
                               game.name,
                               style: theme.textTheme.titleMedium,
@@ -1722,11 +1741,22 @@ class GameDetailPage extends StatelessWidget {
             title: 'How to Play Videos',
             child: Column(
               children: _buildVideoLinks(game.name).map((link) {
-                return ListTile(
-                  dense: true,
-                  leading: const Icon(Icons.play_circle_outline),
-                  title: Text(link.$1),
-                  onTap: () => _launch(link.$2, context),
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 4),
+                  child: ListTile(
+                    dense: true,
+                    leading: Container(
+                      width: 60,
+                      height: 34,
+                      color: Colors.black,
+                      child: const Center(
+                        child: Icon(Icons.play_arrow, color: Colors.red, size: 24),
+                      ),
+                    ),
+                    title: Text(link.$1),
+                    subtitle: const Text('Watch on YouTube'),
+                    onTap: () => _launch(link.$2, context),
+                  ),
                 );
               }).toList(),
             ),
