@@ -45,13 +45,15 @@ In the app (future Settings screen) or we can add secure storage for a personal 
 mobile/
 ├── lib/
 │   ├── main.dart
-│   ├── models/game.dart
-│   ├── services/
-│   │   ├── bgg_service.dart
-│   │   └── ocr_service.dart
-│   └── screens/
-│       ├── home_screen.dart
-│       └── game_detail_screen.dart
+│   ├── models/
+│   ├── services/       # BGG + OCR
+│   └── ...
+├── android/
+├── ios/
+├── windows/            # Desktop support added
+├── linux/
+├── macos/
+├── web/
 └── pubspec.yaml
 ```
 
@@ -64,5 +66,9 @@ mobile/
 - [ ] Offline support with cached popular games
 - [ ] Theming and polish
 - [ ] Publish to App Store + Play Store
+- [ ] Customized list making (create and manage personal game lists)
+- [ ] Snap photo of your collection and auto-build list from photo contents (multi-game detection)
+- [ ] Manual entries (add games manually without photo)
+- [ ] Illegal move tracker (take photo of game in progress to detect/flag illegal moves)
 
 This complements the original Python/Streamlit web prototype.

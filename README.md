@@ -30,13 +30,17 @@ Point your phone or webcam at a board game box and instantly get:
 
 ```
 .
-├── mobile/                 # Flutter mobile app (iOS + Android) - Primary
+├── mobile/                 # Flutter app (iOS + Android + Desktop + Web)
 │   ├── lib/
+│   │   ├── main.dart
 │   │   ├── models/
-│   │   ├── services/       # BGG client + OCR
-│   │   └── screens/        # Home + Game Detail
+│   │   └── services/       # BGG + OCR
 │   ├── android/
-│   └── ios/
+│   ├── ios/
+│   ├── windows/
+│   ├── linux/
+│   ├── macos/
+│   └── web/
 ├── app.py                  # Streamlit web prototype
 ├── bgg_client.py
 ├── identifier.py
@@ -109,6 +113,10 @@ Future improvements (easy to add):
 - [ ] Offline mode with cached popular games
 - [ ] Mobile-friendly PWA or native wrapper
 - [ ] Better strategy content per game (community tips)
+- [ ] Customized list making (create and manage personal game lists)
+- [ ] Snap photo of your collection and auto-build list from photo contents (multi-game detection)
+- [ ] Manual entries (add games manually without photo)
+- [ ] Illegal move tracker (take photo of game in progress to detect/flag illegal moves)
 
 ## Mobile App (Flutter)
 
@@ -148,4 +156,3 @@ Built on top of the excellent data at BoardGameGeek.
 ---
 
 This project was started as the implementation of https://github.com/Cyberj812/Board-Game-Identification goals.
-# Board-Game-Identification
