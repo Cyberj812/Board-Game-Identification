@@ -133,6 +133,7 @@ class _HomePageState extends State<HomePage> {
   bool _isSearchingBgg = false;
   int _searchStart = 0;
   bool _hasMoreResults = true;
+  String _lastBggSearchTerm = ''; // the actual term sent to API (may be broad "the" for filter-only)
 
   // Advanced search filters
   int? _minPlayersFilter;
@@ -300,36 +301,43 @@ class _HomePageState extends State<HomePage> {
       _minRatingFilter = null;
     });
     final q = _searchText.trim();
-    if (q.length >= 2) {
-      _searchBggLibrary(q);
-    } else {
-      setState(() => _bggSearchResults = []);
-    }
+    _searchBggLibrary(q);
   }
 
   Future<void> _searchBggLibrary(String query) async {
     final q = query.trim();
-    if (q.length < 2) {
+    final hasText = q.length >= 2;
+
+    if (!hasText && !_hasAnyFilter()) {
       if (mounted) {
         setState(() {
           _bggSearchResults = [];
           _isSearchingBgg = false;
           _hasMoreResults = false;
           _searchStart = 0;
+          _lastBggSearchTerm = '';
         });
       }
       return;
     }
 
-    setState(() {
-      _isSearchingBgg = true;
-      _searchStart = 0;
-      _hasMoreResults = true;
-    });
+    if (mounted) {
+      setState(() {
+        _isSearchingBgg = true;
+        _searchStart = 0;
+        _hasMoreResults = true;
+      });
+    }
 
     try {
-      // Get initial results from BGG search. Ask for a larger batch so we have headroom for client filters + expansions.
-      final rawResults = await _bgg.searchGames(q, limit: 75, start: 0);
+      // When the user provides a real query use it.
+      // For "empty box" + filters only (short/empty query but filters active), use a broad term
+      // so BGG returns a large pool of games. We then enrich + client-filter to the desired criteria.
+      final searchTerm = hasText ? q : 'the';
+      final fetchLimit = hasText ? 75 : 100;
+
+      _lastBggSearchTerm = searchTerm;
+      final rawResults = await _bgg.searchGames(searchTerm, limit: fetchLimit, start: 0);
 
       // Enrich ALL results so filters (weight/rating/players) can be applied reliably
       final enriched = await _enrichGames(rawResults);
@@ -366,7 +374,7 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           _bggSearchResults = limited;
           _searchStart = 0;
-          // If BGG gave us a healthy batch, offer "Load more" (pagination via start is best-effort).
+          // If BGG gave us a healthy batch, offer "Load more".
           _hasMoreResults = rawResults.length >= 25;
         });
       }
@@ -386,13 +394,16 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _loadMoreBggResults() async {
     final q = _searchText.trim();
-    if (q.length < 2 || !_hasMoreResults || _isSearchingBgg) return;
+    if (q.length < 2 && _lastBggSearchTerm.isEmpty && !_hasAnyFilter()) return;
+    if (!_hasMoreResults || _isSearchingBgg) return;
 
     _searchStart += 25;
     setState(() => _isSearchingBgg = true);
 
     try {
-      final moreRaw = await _bgg.searchGames(q, limit: 25, start: _searchStart);
+      // Use the last actual term sent (important for filter-only / empty box discovery searches)
+      String apiTerm = q.length >= 2 ? q : (_lastBggSearchTerm.isNotEmpty ? _lastBggSearchTerm : 'the');
+      final moreRaw = await _bgg.searchGames(apiTerm, limit: 25, start: _searchStart);
 
       if (moreRaw.isEmpty) {
         if (mounted) setState(() => _hasMoreResults = false);
@@ -487,7 +498,18 @@ class _HomePageState extends State<HomePage> {
       final text = await _ocr.extractText(file);
 
       if (text.trim().isEmpty) {
-        if (mounted) {
+        if (_hasAnyFilter()) {
+          // Empty box + active filters: populate the library list with up to 25 matching games
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(content: Text('No text found on box. Loading games matching your filters...')),
+            );
+            setState(() {
+              _searchText = '';
+            });
+            _searchBggLibrary('');
+          }
+        } else if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Could not read text from image. Try better lighting.')),
           );
@@ -519,22 +541,34 @@ class _HomePageState extends State<HomePage> {
             .toList();
       }
 
-      if (results.isEmpty) {
+      // Apply current optional filters to the OCR/popular candidates if any are active.
+      // This lets "empty box" scans still respect weight / player count / rating.
+      List<Game> finalCandidates = results;
+      if (results.isNotEmpty && _hasAnyFilter()) {
+        final enrichedForFilter = await _enrichGames(results);
+        final matching = enrichedForFilter.where(_matchesFilters).toList();
+        if (matching.isNotEmpty) {
+          finalCandidates = matching;
+        }
+      }
+
+      if (finalCandidates.isEmpty) {
+        // No candidates (or none survived filters). Fall back to showing the list using filters + the OCR text (or broad if empty).
         if (mounted) {
+          final note = _hasAnyFilter() ? ' (no OCR matches under your filters)' : '';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('No matching games found. OCR got: "$cleaned". Try manual search or another photo.')),
+            SnackBar(content: Text('No matching games found$note. OCR got: "$cleaned".')),
           );
         }
-        // Pre-fill search with OCR text for manual correction
         setState(() {
           _searchText = cleaned;
-          _searchBggLibrary(cleaned);
         });
+        _searchBggLibrary(cleaned); // will use filters + broad term if needed → up to 25 results
         return;
       }
 
-      // Fetch details for the top match
-      final top = results.first;
+      // Pick the best (first) candidate that respects filters when possible
+      final top = finalCandidates.first;
       final fullGame = await _bgg.getGameDetails(top.id);
 
       if (fullGame != null && mounted) {
@@ -609,11 +643,8 @@ class _HomePageState extends State<HomePage> {
                 _maxWeightFilter = maxW;
                 _minRatingFilter = minR;
               });
-              final q = _searchText.trim();
-              if (q.length >= 2) {
-                // Restart search with filters applied (will enrich + filter)
-                _searchBggLibrary(q);
-              }
+              // Always call; _searchBggLibrary will handle filter-only discovery when query is short/empty
+              _searchBggLibrary(_searchText.trim());
             }
 
             return Padding(
@@ -1508,15 +1539,26 @@ class _HomePageState extends State<HomePage> {
                   setState(() {
                     _searchText = value;
                   });
+                  final trimmed = value.trim();
                   _searchDebounce?.cancel();
-                  if (value.trim().length >= 2) {
+
+                  final shouldSearch = trimmed.length >= 2 || _hasAnyFilter();
+                  if (shouldSearch) {
                     setState(() {
                       _isSearchingBgg = true;
                       _bggSearchResults = [];
                       _searchStart = 0;
                       _hasMoreResults = true;
                     });
+                  } else {
+                    setState(() {
+                      _bggSearchResults = [];
+                      _isSearchingBgg = false;
+                      _hasMoreResults = false;
+                      _lastBggSearchTerm = '';
+                    });
                   }
+
                   _searchDebounce = Timer(const Duration(milliseconds: 400), () {
                     _searchBggLibrary(value);
                   });
@@ -1594,19 +1636,26 @@ class _HomePageState extends State<HomePage> {
                       return const Center(
                         child: CircularProgressIndicator(),
                       );
-                    } else if (_bggSearchResults.isEmpty && _searchText.trim().length >= 2) {
-                      return const Center(
-                        child: Text(
-                          'No BGG results. Try a different search term.',
-                          textAlign: TextAlign.center,
-                        ),
-                      );
                     } else if (_bggSearchResults.isEmpty) {
-                      return const Center(
+                      final hasQuery = _searchText.trim().length >= 2;
+                      final String message;
+                      final bool isFilterMode = _hasAnyFilter();
+
+                      if (isFilterMode && !hasQuery) {
+                        message = 'No games match your filters.\nTry broadening weight/rating/player ranges or add a search term.';
+                      } else if (isFilterMode) {
+                        message = 'No games match your search and filters.';
+                      } else if (hasQuery) {
+                        message = 'No BGG results. Try a different search term.';
+                      } else {
+                        message = 'Search above to explore BGG\'s full library (150k+ games).\n\nSet Filters (e.g. weight ~3, rating 7+) and search (even with little text) to discover matching games.';
+                      }
+
+                      return Center(
                         child: Text(
-                          'Search above to explore BGG\'s full library (150k+ games).',
+                          message,
                           textAlign: TextAlign.center,
-                          style: TextStyle(color: Colors.grey),
+                          style: (hasQuery || isFilterMode) ? null : const TextStyle(color: Colors.grey),
                         ),
                       );
                     } else {
