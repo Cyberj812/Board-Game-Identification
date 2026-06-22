@@ -216,15 +216,18 @@ class _HomePageState extends State<HomePage> {
 
   Future<List<Game>> _enrichGames(List<Game> partials) async {
     if (partials.isEmpty) return [];
-    final futures = partials.map((g) async {
+    final result = <Game>[];
+    for (final g in partials) {
       try {
         final d = await _bgg.getGameDetails(g.id);
-        return d ?? g;
+        result.add(d ?? g);
       } catch (_) {
-        return g;
+        result.add(g);
       }
-    });
-    return await Future.wait(futures);
+      // Small delay between detail calls to respect BGG rate limits (they are strict)
+      await Future.delayed(const Duration(milliseconds: 400));
+    }
+    return result;
   }
 
   bool _hasAnyFilter() {
@@ -309,31 +312,35 @@ class _HomePageState extends State<HomePage> {
       _lastBggSearchTerm = searchTerm;
       final rawResults = await _bgg.searchGames(searchTerm, limit: fetchLimit, start: 0);
 
-      // Enrich only the first ~15-20 so we don't hammer BGG with dozens of /thing calls at once
-      // (rate limits were likely breaking searches). Stubs for the rest still appear in results
-      // (they pass filters if no stat data, and hydrate on tap).
-      final toEnrich = rawResults.take(18).toList();
-      final enrichedTop = await _enrichGames(toEnrich);
+      List<Game> workingResults = List.from(rawResults);
 
-      // Merge enriched data back into the full raw list (preserve order and all results)
-      final enriched = List<Game>.from(rawResults);
-      for (final e in enrichedTop) {
-        final idx = enriched.indexWhere((g) => g.id == e.id);
-        if (idx != -1) enriched[idx] = e;
+      // Only enrich when filters are active (we need weight/players/rating to filter).
+      // For normal text searches, just use the raw BGG results (id/name/year is enough for the list).
+      // This keeps it to ~1 API call instead of 20 — critical for BGG rate limits.
+      if (_hasAnyFilter() && rawResults.isNotEmpty) {
+        final toEnrich = rawResults.take(18).toList();
+        final enrichedTop = await _enrichGames(toEnrich);
+
+        // Merge
+        for (final e in enrichedTop) {
+          final idx = workingResults.indexWhere((g) => g.id == e.id);
+          if (idx != -1) workingResults[idx] = e;
+        }
       }
 
-      // Start with enriched, optionally augment expansions from top match
-      List<Game> augmented = List.from(enriched);
-      if (rawResults.isNotEmpty) {
+      // Always hydrate the very top result (cheap single call): gets image for list + expansions for Catan-like searches.
+      if (workingResults.isNotEmpty) {
         try {
-          final top = enriched.firstWhere((g) => g.id == rawResults.first.id, orElse: () => enriched.first);
-          // If the top already has expansions from enrichment, use them; otherwise fetch again
-          if (top.expansions.isEmpty) {
-            final details = await _bgg.getGameDetails(top.id);
-            if (details != null && details.expansions.isNotEmpty) {
-              for (final exp in details.expansions) {
-                if (!augmented.any((g) => g.id == exp.id)) {
-                  augmented.add(Game(id: exp.id, name: exp.name, year: ''));
+          final top = workingResults.first;
+          final details = await _bgg.getGameDetails(top.id);
+          if (details != null) {
+            workingResults[0] = details;
+            // surface expansions in results if they pass filters (helps "Catan" searches)
+            for (final exp in details.expansions) {
+              if (!workingResults.any((g) => g.id == exp.id)) {
+                final expG = Game(id: exp.id, name: exp.name, year: '');
+                if (_matchesFilters(expG)) {
+                  workingResults.add(expG);
                 }
               }
             }
@@ -341,13 +348,13 @@ class _HomePageState extends State<HomePage> {
         } catch (_) {}
       }
 
-      // Dedup against user collections + apply advanced filters
+      // Dedup against user collections + apply advanced filters (if any)
       final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
-      final filtered = augmented
+      final filtered = workingResults
           .where((g) => !userIds.contains(g.id) && _matchesFilters(g))
           .toList();
 
-      // Show first 25 (client-side page), but keep any extra from the larger fetch for potential immediate use.
+      // Show first 25
       final limited = filtered.take(25).toList();
 
       if (mounted) {
@@ -390,19 +397,21 @@ class _HomePageState extends State<HomePage> {
       } else {
         final userIds = {..._myCollection.map((g) => g.id), ..._wishlist.map((g) => g.id)};
 
-        // Enrich modestly for this page to avoid rate limit issues
-        final toEnrichMore = moreRaw.take(15).toList();
-        final enrichedTopMore = await _enrichGames(toEnrichMore);
+        List<Game> workingMore = List.from(moreRaw);
 
-        final enrichedMore = List<Game>.from(moreRaw);
-        for (final e in enrichedTopMore) {
-          final idx = enrichedMore.indexWhere((g) => g.id == e.id);
-          if (idx != -1) enrichedMore[idx] = e;
+        // Enrich only if filters active (to support filtering new results)
+        if (_hasAnyFilter() && moreRaw.isNotEmpty) {
+          final toEnrichMore = moreRaw.take(15).toList();
+          final enrichedTopMore = await _enrichGames(toEnrichMore);
+
+          for (final e in enrichedTopMore) {
+            final idx = workingMore.indexWhere((g) => g.id == e.id);
+            if (idx != -1) workingMore[idx] = e;
+          }
         }
 
-        // Accept what BGG returned for the page (BGG already matched the query).
-        // Only filter: not user-owned, not already in current results, and pass active filters.
-        final newCandidates = enrichedMore.where((g) {
+        // Accept what BGG returned for the page.
+        final newCandidates = workingMore.where((g) {
           if (userIds.contains(g.id)) return false;
           if (_bggSearchResults.any((e) => e.id == g.id)) return false;
           return _matchesFilters(g);
@@ -613,7 +622,7 @@ class _HomePageState extends State<HomePage> {
       if (raw.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not fetch from BGG. Search the library and add some games first!')),
+            const SnackBar(content: Text('Cannot get anything from BGG right now. Try searching the library manually.')),
           );
         }
         return;
@@ -637,7 +646,7 @@ class _HomePageState extends State<HomePage> {
     } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not pick random game. Try searching the library instead.')),
+          const SnackBar(content: Text('Cannot get anything from BGG right now. Try searching the library instead.')),
         );
       }
     }

@@ -29,12 +29,12 @@ class BggService {
 
     List<Game> parsed = [];
     int attempt = 0;
-    const maxAttempts = 2;
+    const maxAttempts = 3;
 
     while (attempt < maxAttempts && parsed.isEmpty) {
       attempt++;
       if (attempt > 1) {
-        await Future.delayed(const Duration(milliseconds: 1600));
+        await Future.delayed(const Duration(milliseconds: 2200));
       }
 
       http.Response resp;
@@ -44,14 +44,12 @@ class BggService {
         continue;
       }
 
-      // Handle explicit 202 or cases where BGG returns 200 but no items yet (processing)
-      if (resp.statusCode == 202 || resp.statusCode == 200) {
-        if (resp.body.isNotEmpty) {
-          try {
-            parsed = _parseSearchResults(resp.body, limit);
-          } catch (_) {
-            parsed = [];
-          }
+      // Try to parse on any response that has body (BGG can be quirky with status codes)
+      if (resp.body.isNotEmpty) {
+        try {
+          parsed = _parseSearchResults(resp.body, limit);
+        } catch (_) {
+          parsed = [];
         }
       }
 
