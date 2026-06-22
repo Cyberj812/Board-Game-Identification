@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
 import 'dart:convert';
+import 'dart:math';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:confetti/confetti.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 import 'models/game.dart';
 import 'services/ocr_service.dart';
@@ -47,10 +50,21 @@ class _HomePageState extends State<HomePage> {
   final _ocr = OcrService();
   final _bgg = BggService();
 
+  late ConfettiController _confettiController;
+  final AudioPlayer _audioPlayer = AudioPlayer();
+
   @override
   void initState() {
     super.initState();
     _loadCollection();
+    _confettiController = ConfettiController(duration: const Duration(seconds: 2));
+  }
+
+  @override
+  void dispose() {
+    _confettiController.dispose();
+    _audioPlayer.dispose();
+    super.dispose();
   }
 
   Future<void> _loadCollection() async {
@@ -513,6 +527,193 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _showWhatShouldWePlay() {
+    List<Game> selectedGames = List.from(_myCollection);
+    bool useAll = _myCollection.isNotEmpty;
+    bool isSpinning = false;
+    Game? selectedGame;
+    double rotation = 0;
+    String wheelSearch = '';
+
+    showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: const Text('What Should We Play?'),
+              content: SizedBox(
+                width: double.maxFinite,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (_myCollection.isNotEmpty)
+                      SwitchListTile(
+                        title: const Text('Use all from My Collection'),
+                        value: useAll,
+                        onChanged: (val) {
+                          setDialogState(() {
+                            useAll = val;
+                            if (val) {
+                              selectedGames = List.from(_myCollection);
+                            } else {
+                              selectedGames = [];
+                            }
+                          });
+                        },
+                      ),
+                    if (!useAll && _myCollection.isNotEmpty) ...[
+                      const Text('Select games:'),
+                      const SizedBox(height: 4),
+                      TextField(
+                        decoration: const InputDecoration(
+                          hintText: 'Filter games...',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (val) => setDialogState(() => wheelSearch = val.toLowerCase()),
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 6,
+                        children: _myCollection
+                            .where((g) => g.name.toLowerCase().contains(wheelSearch))
+                            .map((game) {
+                          final isSelected = selectedGames.contains(game);
+                          return FilterChip(
+                            label: Text(game.name),
+                            selected: isSelected,
+                            onSelected: (sel) {
+                              setDialogState(() {
+                                if (sel) {
+                                  selectedGames.add(game);
+                                } else {
+                                  selectedGames.remove(game);
+                                }
+                              });
+                            },
+                          );
+                        }).toList(),
+                      ),
+                    ],
+                    const SizedBox(height: 16),
+                    if (selectedGames.isNotEmpty && !isSpinning)
+                      ElevatedButton.icon(
+                        onPressed: () async {
+                          setDialogState(() {
+                            isSpinning = true;
+                            selectedGame = null;
+                          });
+
+                          // Spin animation
+                          final random = Random();
+                          final spins = 5 + random.nextInt(5); // 5-10 spins
+                          final targetIndex = random.nextInt(selectedGames.length);
+                          final anglePerItem = 2 * pi / selectedGames.length;
+                          final finalRotation = spins * 2 * pi + (targetIndex * anglePerItem);
+
+                          // Animate rotation
+                          for (int i = 0; i <= 30; i++) {
+                            await Future.delayed(const Duration(milliseconds: 50));
+                            setDialogState(() {
+                              rotation = (finalRotation * (i / 30));
+                            });
+                          }
+
+                          setDialogState(() {
+                            selectedGame = selectedGames[targetIndex];
+                            isSpinning = false;
+                          });
+
+                          // Play sound and confetti
+                          try {
+                            await _audioPlayer.play(AssetSource('sounds/fanfare.mp3'));
+                          } catch (_) {
+                            // Sound file not found, skip
+                          }
+                          _confettiController.play();
+
+                          // Show result for a bit
+                          await Future.delayed(const Duration(seconds: 3));
+                          if (mounted && Navigator.canPop(context)) {
+                            // Keep dialog open with result
+                          }
+                        },
+                        icon: const Icon(Icons.casino),
+                        label: const Text('Spin the Wheel!'),
+                      ),
+                    if (isSpinning || selectedGame != null) ...[
+                      const SizedBox(height: 16),
+                      _SpinningWheel(
+                        games: selectedGames,
+                        rotation: rotation,
+                        selectedGame: selectedGame,
+                      ),
+                      if (selectedGame != null) ...[
+                        const SizedBox(height: 16),
+                        Stack(
+                          alignment: Alignment.center,
+                          children: [
+                            Text(
+                              '🎉 ${selectedGame!.name} 🎉',
+                              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                              textAlign: TextAlign.center,
+                            ),
+                            ConfettiWidget(
+                              confettiController: _confettiController,
+                              blastDirectionality: BlastDirectionality.explosive,
+                              shouldLoop: false,
+                              colors: const [
+                                Colors.red,
+                                Colors.blue,
+                                Colors.green,
+                                Colors.yellow,
+                                Colors.purple,
+                              ],
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 8),
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => GameDetailPage(game: selectedGame!),
+                              ),
+                            );
+                          },
+                          child: const Text('View Game Details'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            setDialogState(() {
+                              isSpinning = false;
+                              selectedGame = null;
+                              rotation = 0;
+                            });
+                          },
+                          child: const Text('Spin Again'),
+                        ),
+                      ],
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context),
+                  child: const Text('Close'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
   Future<void> _suggestFeature() async {
     const url = 'https://github.com/Cyberj812/Board-Game-Identification/issues/new?template=feature_request.md';
     final uri = Uri.parse(url);
@@ -621,6 +822,17 @@ class _HomePageState extends State<HomePage> {
                   onPressed: _pickRandomFromMyCollection,
                   icon: const Icon(Icons.shuffle),
                   label: const Text('Pick Random from My Collection'),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Center(
+                child: FilledButton.icon(
+                  onPressed: _showWhatShouldWePlay,
+                  icon: const Icon(Icons.casino_outlined),
+                  label: const Text('What Should We Play?'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.purple,
+                  ),
                 ),
               ),
               const SizedBox(height: 8),
@@ -1143,4 +1355,120 @@ final sampleGames = <Game>[
     description: 'Draft tiles and complete patterns to score points in this elegant abstract game.',
   ),
 ];
+
+class _SpinningWheel extends StatelessWidget {
+  final List<Game> games;
+  final double rotation;
+  final Game? selectedGame;
+
+  const _SpinningWheel({
+    required this.games,
+    required this.rotation,
+    this.selectedGame,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (games.isEmpty) return const SizedBox.shrink();
+
+    final size = 200.0;
+    final anglePerItem = 2 * pi / games.length;
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          // Wheel
+          Transform.rotate(
+            angle: rotation,
+            child: CustomPaint(
+              size: Size(size, size),
+              painter: _WheelPainter(games.length),
+            ),
+          ),
+          // Labels
+          ...List.generate(games.length, (index) {
+            final angle = index * anglePerItem + (anglePerItem / 2) - (rotation % (2 * pi));
+            final x = (size / 2) * 0.6 * cos(angle - pi / 2);
+            final y = (size / 2) * 0.6 * sin(angle - pi / 2);
+            return Transform.translate(
+              offset: Offset(x, y),
+              child: Transform.rotate(
+                angle: angle + pi / 2,
+                child: SizedBox(
+                  width: 60,
+                  child: Text(
+                    games[index].name,
+                    style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold),
+                    textAlign: TextAlign.center,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+              ),
+            );
+          }),
+          // Pointer
+          const Positioned(
+            top: 0,
+            child: Icon(Icons.arrow_drop_down, size: 40, color: Colors.red),
+          ),
+          // Center
+          Container(
+            width: 40,
+            height: 40,
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              shape: BoxShape.circle,
+              boxShadow: [BoxShadow(blurRadius: 4)],
+            ),
+            child: const Icon(Icons.casino, size: 24),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WheelPainter extends CustomPainter {
+  final int segments;
+
+  _WheelPainter(this.segments);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..style = PaintingStyle.fill;
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    final sweep = 2 * pi / segments;
+
+    for (int i = 0; i < segments; i++) {
+      paint.color = Colors.primaries[i % Colors.primaries.length].shade300;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        i * sweep,
+        sweep,
+        true,
+        paint,
+      );
+      // Optional border
+      final borderPaint = Paint()
+        ..color = Colors.black
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1;
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        i * sweep,
+        sweep,
+        true,
+        borderPaint,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 

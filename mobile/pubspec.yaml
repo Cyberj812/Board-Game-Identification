@@ -31,6 +31,10 @@ dependencies:
   # State (simple start)
   provider: ^6.1.2
 
+  # New for features
+  confetti: ^0.7.0
+  audioplayers: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -39,6 +43,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
-  # Add assets later if needed (game icons, etc.)
-  # assets:
-  #   - assets/images/
+  assets:
+    - assets/sounds/
+    # Add game icons later if needed:
+    # - assets/images/
