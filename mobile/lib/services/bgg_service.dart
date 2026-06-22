@@ -61,20 +61,8 @@ class BggService {
       }
     }
 
-    // API gave us nothing usable after retries. Fall back to the known popular games so
-    // at least the common ones can be found by typing (same as photo scan fallback behavior).
-    // Real BGG results are preferred when the API succeeds.
-    return _fallbackToPopular(query, limit);
-  }
-
-  List<Game> _fallbackToPopular(String query, int limit) {
-    final q = query.toLowerCase().trim();
-    if (q.isEmpty) return [];
-    return _popularGames.where((g) {
-      final n = g.name.toLowerCase();
-      // Simple match: contains either way (good enough for the known titles)
-      return n.contains(q) || q.contains(n);
-    }).take(limit).toList();
+    // No usable results from live BGG after retries. Return empty (pure BGG data only).
+    return [];
   }
 
   List<Game> _parseSearchResults(String body, int limit) {
@@ -120,11 +108,10 @@ class BggService {
         }
       }
     } catch (_) {
-      // fall through to static on failure
+      // No fallback - we want only live BGG data
     }
 
-    // Fallback to static popular data
-    return _popularGamesMap[id];
+    return null;
   }
 
   Game _parseThing(XmlElement item, String id) {
@@ -192,95 +179,5 @@ class BggService {
     );
   }
 
-  // Built-in popular games (works offline / when API is restricted)
-  static final List<Game> _popularGames = [
-    Game(
-      id: '266192',
-      name: 'Wingspan',
-      year: '2019',
-      minPlayers: 1,
-      maxPlayers: 5,
-      playtime: '40-70',
-      weight: 2.4,
-      rank: 38,
-      rating: 8.1,
-      digitalPlatforms: [
-        DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
-        DigitalPlatform(name: 'Board Game Arena', url: 'https://boardgamearena.com/'),
-      ],
-    ),
-    Game(
-      id: '291457',
-      name: 'Dune: Imperium',
-      year: '2020',
-      minPlayers: 1,
-      maxPlayers: 4,
-      playtime: '60-120',
-      weight: 3.0,
-      rank: 25,
-      digitalPlatforms: [
-        DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
-      ],
-    ),
-    Game(
-      id: '13',
-      name: 'Catan',
-      year: '1995',
-      minPlayers: 3,
-      maxPlayers: 4,
-      playtime: '60-120',
-      weight: 2.3,
-      rank: 400,
-      rating: 7.2,
-      digitalPlatforms: [
-        DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
-        DigitalPlatform(name: 'Catan Universe (Steam)', url: 'https://store.steampowered.com/app/544730/Catan_Universe/'),
-      ],
-      expansions: [
-        Expansion(id: '11', name: 'Catan: Cities & Knights'),
-        Expansion(id: '10', name: 'Catan: Seafarers'),
-        Expansion(id: '12', name: 'Catan: Traders & Barbarians'),
-        Expansion(id: '13', name: 'Catan: Explorers & Pirates'),
-        Expansion(id: '14', name: 'Catan: Cities & Knights 5-6 Player'),
-      ],
-    ),
-    Game(
-      id: '205637',
-      name: 'Ark Nova',
-      year: '2021',
-      minPlayers: 1,
-      maxPlayers: 4,
-      playtime: '90-150',
-      weight: 3.7,
-      rank: 4,
-      rating: 8.7,
-    ),
-    Game(
-      id: '199792',
-      name: 'Everdell',
-      year: '2018',
-      minPlayers: 1,
-      maxPlayers: 4,
-      playtime: '40-80',
-      weight: 2.8,
-      rank: 55,
-      digitalPlatforms: [
-        DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
-      ],
-    ),
-    Game(id: '68448', name: '7 Wonders', year: '2010', minPlayers: 3, maxPlayers: 7, playtime: '30', weight: 2.3, rank: 150),
-    Game(id: '822', name: 'Carcassonne', year: '2000', minPlayers: 2, maxPlayers: 5, playtime: '30-45', weight: 1.9, rank: 300),
-    Game(id: '36218', name: 'Dominion', year: '2008', minPlayers: 2, maxPlayers: 4, playtime: '30', weight: 2.0, rank: 120),
-    Game(id: '30549', name: 'Pandemic', year: '2008', minPlayers: 2, maxPlayers: 4, playtime: '45', weight: 2.4, rank: 250),
-    Game(id: '31260', name: 'Agricola', year: '2007', minPlayers: 1, maxPlayers: 5, playtime: '90-120', weight: 3.6, rank: 180),
-    Game(id: '3076', name: 'Puerto Rico', year: '2002', minPlayers: 3, maxPlayers: 5, playtime: '90-150', weight: 3.3, rank: 90),
-    Game(id: '9209', name: 'Ticket to Ride', year: '2004', minPlayers: 2, maxPlayers: 5, playtime: '30-60', weight: 1.9, rank: 220),
-    Game(id: '2651', name: 'Power Grid', year: '2004', minPlayers: 2, maxPlayers: 6, playtime: '120', weight: 3.3, rank: 140),
-    Game(id: '40834', name: '7 Wonders Duel', year: '2015', minPlayers: 2, maxPlayers: 2, playtime: '30', weight: 2.2, rank: 80),
-  ];
-
-  static final Map<String, Game> _popularGamesMap =
-      {for (final g in _popularGames) g.id: g};
-
-  List<Game> getPopularGames() => _popularGames;
+  // No more hardcoded popular games. All data comes from live BGG searches.
 }

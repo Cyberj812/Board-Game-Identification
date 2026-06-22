@@ -556,15 +556,10 @@ class _HomePageState extends State<HomePage> {
         }
       }
 
-      if (results.isEmpty) {
-        // Fuzzy fallback to popular for scan to always get something relevant
-        results = _bgg.getPopularGames()
-            .where((g) => _fuzzyMatch(g.name, cleaned, maxDist: 3))
-            .take(5)
-            .toList();
-      }
+      // No more popular game fallbacks. Results come only from live BGG searches.
+      // If still empty after BGG attempts, we'll fall through to prefill/manual search.
 
-      // Apply current optional filters to the OCR/popular candidates if any are active.
+      // Apply current optional filters to the BGG candidates (if any are active).
       // This lets "empty box" scans still respect weight / player count / rating.
       List<Game> finalCandidates = results;
       if (results.isNotEmpty && _hasAnyFilter()) {
@@ -576,9 +571,9 @@ class _HomePageState extends State<HomePage> {
       }
 
       if (finalCandidates.isEmpty) {
-        // No candidates (or none survived filters). Fall back to showing the list using filters + the OCR text (or broad if empty).
+        // No candidates from live BGG search (or none survived your filters).
         if (mounted) {
-          final note = _hasAnyFilter() ? ' (no OCR matches under your filters)' : '';
+          final note = _hasAnyFilter() ? ' (no matches under your filters)' : '';
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(content: Text('No matching games found$note. OCR got: "$cleaned".')),
           );
@@ -586,7 +581,7 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           _searchText = cleaned;
         });
-        _searchBggLibrary(cleaned); // will use filters + broad term if needed → up to 25 results
+        _searchBggLibrary(cleaned); // live BGG (with filters for discovery if active)
         return;
       }
 
@@ -626,22 +621,62 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _showRandomGame() {
-    final pool = _myCollection.isNotEmpty 
-        ? _myCollection 
-        : _bgg.getPopularGames();
-    if (pool.isEmpty) return;
-    final game = (List.from(pool)..shuffle()).first;
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => GameDetailPage(
-          game: game,
-          onAddToMyCollection: () => _addToMyCollection(game),
-          onAddToWishlist: () => _addToWishlist(game),
+  void _showRandomGame() async {
+    if (_myCollection.isNotEmpty) {
+      final game = (List.from(_myCollection)..shuffle()).first;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GameDetailPage(
+            game: game,
+            onAddToMyCollection: () => _addToMyCollection(game),
+            onAddToWishlist: () => _addToWishlist(game),
+          ),
         ),
-      ),
-    );
+      );
+      return;
+    }
+
+    // No collection yet: do a live BGG search for a real random game (no hardcoded data)
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Picking a random game from BGG...')),
+      );
+    }
+
+    try {
+      final raw = await _bgg.searchGames('game', limit: 15);
+      if (raw.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not fetch from BGG. Search the library and add some games first!')),
+          );
+        }
+        return;
+      }
+
+      // Pick one and hydrate fully (live data only)
+      final partial = (List.from(raw)..shuffle()).first;
+      final game = await _bgg.getGameDetails(partial.id) ?? partial;
+
+      if (!mounted) return;
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => GameDetailPage(
+            game: game,
+            onAddToMyCollection: () => _addToMyCollection(game),
+            onAddToWishlist: () => _addToWishlist(game),
+          ),
+        ),
+      );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Could not pick random game. Try searching the library instead.')),
+        );
+      }
+    }
   }
 
   void _showSearchFilters() {
@@ -2095,20 +2130,6 @@ class GameDetailPage extends StatelessWidget {
                             ))
                         .toList(),
                   ),
-          ),
-
-          // Similar / Popular Games (from BGG)
-          _Section(
-            title: 'Popular on BGG',
-            child: Column(
-              children: const [
-                // Note: For a real similar-games feature we'd query BGG recommendations.
-                // For now we surface a few popular titles as discovery.
-                ListTile(dense: true, title: Text('Wingspan')),
-                ListTile(dense: true, title: Text('Dune: Imperium')),
-                ListTile(dense: true, title: Text('Ark Nova')),
-              ],
-            ),
           ),
 
           // How to Play Videos
