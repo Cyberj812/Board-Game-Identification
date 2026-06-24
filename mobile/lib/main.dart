@@ -14,6 +14,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:pdf_text/pdf_text.dart';
 import 'package:http/http.dart' as http;
+import 'package:open_filex/open_filex.dart';
 
 import 'models/game.dart';
 import 'services/ocr_service.dart';
@@ -1682,7 +1683,7 @@ class _HomePageState extends State<HomePage> {
                                     leading: Icon(hasLocal ? Icons.book : Icons.link, size: 28),
                                     title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.w600)),
                                     subtitle: Text('${r.gameName} • ${hasLocal ? "Downloaded" : "Link"}'),
-                                    onTap: () => _openRulebook(r),
+                                    onTap: () => _openRulebook(r),  // defaults to in-app viewer (pdfx)
                                     trailing: Row(
                                       mainAxisSize: MainAxisSize.min,
                                       children: [
@@ -1693,6 +1694,21 @@ class _HomePageState extends State<HomePage> {
                                             onPressed: () async {
                                               await _downloadRulebook(r);
                                               setDialogState(() {});
+                                            },
+                                          ),
+                                        if (hasLocal)
+                                          IconButton(
+                                            icon: const Icon(Icons.open_in_new),
+                                            tooltip: 'Open with external viewer (Google PDF Viewer, Chrome, etc.)',
+                                            onPressed: () async {
+                                              final result = await OpenFilex.open(r.localPath!);
+                                              if (result.type != ResultType.done) {
+                                                if (mounted) {
+                                                  ScaffoldMessenger.of(context).showSnackBar(
+                                                    SnackBar(content: Text('Could not open file: ${result.message}')),
+                                                  );
+                                                }
+                                              }
                                             },
                                           ),
                                         IconButton(

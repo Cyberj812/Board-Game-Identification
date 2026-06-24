@@ -41,8 +41,9 @@ dependencies:
   # Rulebook library
   path_provider: ^2.1.4
   pdfx: ^2.1.0
-  # pdf_text temporarily removed due to http version conflict with pdf_text ^0.5.0
-  # Text extraction will be re-added with a compatible package later.
+  open_filex: ^4.4.0
+  # Note: You can choose to open rulebooks with Google PDF Viewer (or any installed viewer)
+  # via the "Open externally" button. pdfx provides optional in-app viewing.
 
 dev_dependencies:
   flutter_test:
