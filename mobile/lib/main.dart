@@ -12,7 +12,6 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
-import 'package:pdf_text/pdf_text.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 
