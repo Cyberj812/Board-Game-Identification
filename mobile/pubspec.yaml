@@ -49,6 +49,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^4.0.0
+  flutter_launcher_icons: ^0.14.3
 
 flutter:
   uses-material-design: true
@@ -57,3 +58,23 @@ flutter:
     - assets/sounds/
     # Add game icons later if needed:
     # - assets/images/
+
+# App icon configuration
+# To regenerate icons: dart run flutter_launcher_icons
+flutter_launcher_icons:
+  android: "ic_launcher"
+  ios: true
+  image_path: "assets/app_icon_master.png"
+  min_sdk_android: 21
+  web:
+    generate: true
+    image_path: "assets/app_icon_master.png"
+    background_color: "#ffffff"
+    theme_color: "#673AB7"
+  windows:
+    generate: true
+    image_path: "assets/app_icon_master.png"
+    icon_size: 256
+  macos:
+    generate: true
+    image_path: "assets/app_icon_master.png"
