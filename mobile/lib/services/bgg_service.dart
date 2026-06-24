@@ -8,6 +8,115 @@ class BggService {
 
   BggService({this.token});
 
+  // TEMPORARY PLACEHOLDER DATA
+  // Used only when no BGG token is provided (until you register at https://boardgamegeek.com/applications).
+  // Remove this entire block and the _searchDemo / _getDemoGame calls once you have a real token.
+  // These are real-ish samples so you can test search, filters, details, adding to collections, etc.
+  static final List<Game> _demoGames = [
+    Game(
+      id: '13',
+      name: 'Catan',
+      year: '1995',
+      minPlayers: 3,
+      maxPlayers: 4,
+      playtime: '60-120',
+      weight: 2.3,
+      rank: 400,
+      rating: 7.2,
+      digitalPlatforms: [
+        DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
+        DigitalPlatform(name: 'Catan Universe (Steam)', url: 'https://store.steampowered.com/app/544730/Catan_Universe/'),
+      ],
+      expansions: [
+        Expansion(id: '11', name: 'Catan: Cities & Knights'),
+        Expansion(id: '10', name: 'Catan: Seafarers'),
+        Expansion(id: '12', name: 'Catan: Traders & Barbarians'),
+      ],
+    ),
+    Game(
+      id: '266192',
+      name: 'Wingspan',
+      year: '2019',
+      minPlayers: 1,
+      maxPlayers: 5,
+      playtime: '40-70',
+      weight: 2.4,
+      rank: 38,
+      rating: 8.1,
+      digitalPlatforms: [
+        DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
+        DigitalPlatform(name: 'Board Game Arena', url: 'https://boardgamearena.com/'),
+      ],
+    ),
+    Game(
+      id: '291457',
+      name: 'Dune: Imperium',
+      year: '2020',
+      minPlayers: 1,
+      maxPlayers: 4,
+      playtime: '60-120',
+      weight: 3.0,
+      rank: 25,
+      rating: 8.4,
+      digitalPlatforms: [
+        DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
+      ],
+    ),
+    Game(
+      id: '205637',
+      name: 'Ark Nova',
+      year: '2021',
+      minPlayers: 1,
+      maxPlayers: 4,
+      playtime: '90-150',
+      weight: 3.7,
+      rank: 4,
+      rating: 8.7,
+    ),
+    Game(
+      id: '9209',
+      name: 'Ticket to Ride',
+      year: '2004',
+      minPlayers: 2,
+      maxPlayers: 5,
+      playtime: '30-60',
+      weight: 1.9,
+      rank: 220,
+      rating: 7.5,
+      digitalPlatforms: [
+        DigitalPlatform(name: 'Tabletop Simulator', url: 'https://store.steampowered.com/app/286160/Tabletop_Simulator/'),
+      ],
+    ),
+    Game(
+      id: '30549',
+      name: 'Pandemic',
+      year: '2008',
+      minPlayers: 2,
+      maxPlayers: 4,
+      playtime: '45',
+      weight: 2.4,
+      rank: 250,
+      rating: 7.6,
+    ),
+  ];
+
+  List<Game> _searchDemo(String query, {int limit = 10}) {
+    final q = query.toLowerCase().trim();
+    if (q.isEmpty) return _demoGames.take(limit).toList();
+    return _demoGames
+        .where((g) => g.name.toLowerCase().contains(q))
+        .take(limit)
+        .toList();
+  }
+
+  Game? _getDemoGame(String id) {
+    try {
+      return _demoGames.firstWhere((g) => g.id == id);
+    } catch (_) {
+      return null;
+    }
+  }
+
   Map<String, String> get _headers {
     final h = {
       'User-Agent': 'BoardGameSnap/1.0 (Flutter App)',
@@ -21,6 +130,12 @@ class BggService {
 
   Future<List<Game>> searchGames(String query, {int limit = 10, int start = 0}) async {
     if (query.trim().length < 2) return [];
+
+    // TEMPORARY: Use demo data until you provide a real BGG token (see BggService constructor).
+  // Also blended with your local collection in the UI for better search experience.
+    if (token == null || token!.isEmpty) {
+      return _searchDemo(query, limit: limit);
+    }
 
     // Only include start if >0. BGG search pagination is unreliable; omitting for initial searches helps.
     String url = '$_base/search?query=${Uri.encodeComponent(query)}&type=boardgame';
@@ -92,6 +207,11 @@ class BggService {
   }
 
   Future<Game?> getGameDetails(String id) async {
+    // TEMPORARY: Use demo data until you provide a real BGG token
+    if (token == null || token!.isEmpty) {
+      return _getDemoGame(id);
+    }
+
     // Always try the live BGG API first to get complete data (expansions, full stats, etc.)
     try {
       final uri = Uri.parse('$_base/thing?id=$id&stats=1');
@@ -177,5 +297,82 @@ class BggService {
     );
   }
 
-  // No more hardcoded popular games. All data comes from live BGG searches.
+  // Live BGG data when token provided.
+  // Demo data (above) used as temporary placeholder until token is obtained.
+
+  Future<List<Game>> fetchUserCollection(String username) async {
+    if (token == null || token!.isEmpty) {
+      // For now return empty until token is provided
+      return [];
+    }
+
+    final uri = Uri.parse(
+        '$_base/collection?username=$username&own=1&subtype=boardgame&excludessubtype=boardgameexpansion');
+
+    http.Response resp;
+    try {
+      resp = await http.get(uri, headers: _headers);
+    } catch (_) {
+      return [];
+    }
+
+    // Handle 202 processing
+    if (resp.statusCode == 202) {
+      await Future.delayed(const Duration(seconds: 2));
+      try {
+        resp = await http.get(uri, headers: _headers);
+      } catch (_) {
+        return [];
+      }
+    }
+
+    if (resp.statusCode != 200 || resp.body.isEmpty) {
+      return [];
+    }
+
+    return _parseCollection(resp.body);
+  }
+
+  List<Game> _parseCollection(String body) {
+    final document = XmlDocument.parse(body);
+    final items = document.findAllElements('item');
+
+    final results = <Game>[];
+    for (final item in items) {
+      final id = item.getAttribute('objectid') ?? '';
+      if (id.isEmpty) continue;
+
+      final nameEl = item.findElements('name').firstOrNull;
+      final name = nameEl?.innerText ?? 'Unknown';
+
+      final yearEl = item.findElements('yearpublished').firstOrNull;
+      final year = yearEl?.innerText ?? '';
+
+      final imageEl = item.findElements('image').firstOrNull;
+      final imageUrl = imageEl?.innerText;
+
+      final thumbEl = item.findElements('thumbnail').firstOrNull;
+      final thumbnail = thumbEl?.innerText;
+
+      // Basic stats if present in collection export
+      double? rating;
+      final stats = item.findElements('stats').firstOrNull;
+      if (stats != null) {
+        final ratingEl = stats.findElements('rating').firstOrNull;
+        final avgEl = ratingEl?.findElements('average').firstOrNull;
+        if (avgEl != null) {
+          rating = double.tryParse(avgEl.getAttribute('value') ?? '');
+        }
+      }
+
+      results.add(Game(
+        id: id,
+        name: name,
+        year: year,
+        imageUrl: imageUrl,
+        // thumbnail can be used if we extend model, for now use image
+      ));
+    }
+    return results;
+  }
 }

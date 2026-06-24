@@ -167,3 +167,49 @@ class PlayLog {
         'notes': notes,
       };
 }
+
+class Rulebook {
+  final String id;
+  final String gameId;
+  final String gameName;
+  final String title;
+  final String? url; // BGG or official link
+  final String? localPath; // for downloaded PDF
+  final String? extractedText; // for in-rulebook search
+  final DateTime addedDate;
+
+  Rulebook({
+    required this.id,
+    required this.gameId,
+    required this.gameName,
+    required this.title,
+    this.url,
+    this.localPath,
+    this.extractedText,
+    DateTime? addedDate,
+  }) : addedDate = addedDate ?? DateTime.now();
+
+  factory Rulebook.fromJson(Map<String, dynamic> json) {
+    return Rulebook(
+      id: json['id'] ?? '',
+      gameId: json['gameId'] ?? '',
+      gameName: json['gameName'] ?? '',
+      title: json['title'] ?? 'Untitled Rulebook',
+      url: json['url'],
+      localPath: json['localPath'],
+      extractedText: json['extractedText'],
+      addedDate: json['addedDate'] != null ? DateTime.parse(json['addedDate']) : null,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'gameId': gameId,
+        'gameName': gameName,
+        'title': title,
+        'url': url,
+        'localPath': localPath,
+        'extractedText': extractedText,
+        'addedDate': addedDate.toIso8601String(),
+      };
+}

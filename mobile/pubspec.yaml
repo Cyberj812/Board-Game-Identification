@@ -38,6 +38,14 @@ dependencies:
   # Typography
   google_fonts: ^6.2.1
 
+  # Rulebook library
+  path_provider: ^2.1.4
+  pdfx: ^2.1.0
+  pdf_text: ^0.5.0
+
+dependency_overrides:
+  http: ^1.2.1
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
