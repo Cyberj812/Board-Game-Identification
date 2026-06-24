@@ -161,6 +161,9 @@ class _HomePageState extends State<HomePage> {
   late ConfettiController _confettiController;
   final AudioPlayer _audioPlayer = AudioPlayer();
 
+  // Bottom tabs: 0=My Collection (default), 1=Play, 2=Dice, 3=Score Tracker
+  int _selectedIndex = 0;
+
   @override
   void initState() {
     super.initState();
@@ -277,6 +280,42 @@ class _HomePageState extends State<HomePage> {
       parts.add('Rating \u2265 ${_minRatingFilter!.toStringAsFixed(1)}');
     }
     return Text(parts.join('  •  '), style: const TextStyle(fontSize: 12, color: Colors.deepPurple));
+  }
+
+  Widget _buildSolidActionButton({
+    required IconData icon,
+    required String label,
+    required VoidCallback onPressed,
+    Color? backgroundColor,
+    bool filled = false,
+  }) {
+    final style = filled
+        ? FilledButton.styleFrom(
+            backgroundColor: backgroundColor,
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          )
+        : OutlinedButton.styleFrom(
+            padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 16),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+          );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: (filled
+              ? FilledButton.icon(
+                  onPressed: onPressed,
+                  icon: Icon(icon),
+                  label: Text(label),
+                  style: style,
+                )
+              : OutlinedButton.icon(
+                  onPressed: onPressed,
+                  icon: Icon(icon, size: 20),
+                  label: Text(label),
+                  style: style,
+                )),
+    );
   }
 
   void _clearSearchFilters() {
@@ -2226,7 +2265,7 @@ class _HomePageState extends State<HomePage> {
     return Scaffold(
       resizeToAvoidBottomInset: false,
       appBar: AppBar(
-        title: const Text('Board Game Snap'),
+        title: Text(_tabTitle()),
         actions: [
           IconButton(
             icon: const Icon(Icons.help_outline),
@@ -2265,284 +2304,810 @@ class _HomePageState extends State<HomePage> {
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(
-                'Find your next game',
-                style: Theme.of(context).textTheme.headlineLarge,
-              ),
-              const SizedBox(height: 4),
-              Text(
-                'Identify games from photos, search the library, and manage your collection and wishlist.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 8),
-              TextField(
-                decoration: const InputDecoration(
-                  labelText: 'Search games (your collection + library)',
-                  border: OutlineInputBorder(),
-                  prefixIcon: Icon(Icons.search),
-                ),
-                onChanged: (value) {
-                  setState(() {
-                    _searchText = value;
-                  });
-                  final trimmed = value.trim();
-                  _searchDebounce?.cancel();
+          child: _buildCurrentTab(),
+        ),
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _selectedIndex,
+        onTap: (index) => setState(() => _selectedIndex = index),
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: Theme.of(context).colorScheme.primary,
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(Icons.menu_book),
+            label: 'My Collection',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.videogame_asset),
+            label: 'Play',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.casino),
+            label: 'Dice',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(Icons.scoreboard),
+            label: 'Score',
+          ),
+        ],
+      ),
+    );
+  }
 
-                  final shouldSearch = trimmed.length >= 2 || _hasAnyFilter();
-                  if (shouldSearch) {
-                    setState(() {
-                      _isSearchingBgg = true;
-                      _bggSearchResults = [];
-                      _searchStart = 0;
-                      _hasMoreResults = true;
-                    });
-                  } else {
-                    setState(() {
-                      _bggSearchResults = [];
-                      _isSearchingBgg = false;
-                      _hasMoreResults = false;
-                      _lastBggSearchTerm = '';
-                    });
-                  }
+  String _tabTitle() {
+    switch (_selectedIndex) {
+      case 0:
+        return 'My Collection';
+      case 1:
+        return 'Play';
+      case 2:
+        return 'Dice';
+      case 3:
+        return 'Score Tracker';
+      default:
+        return 'Board Game Snap';
+    }
+  }
 
-                  _searchDebounce = Timer(const Duration(milliseconds: 400), () {
-                    _searchBggLibrary(value);
-                  });
-                },
-              ),
-              const SizedBox(height: 6),
-              // Optional advanced filters row
-              Row(
-                children: [
-                  Expanded(
-                    child: _buildActiveFilterSummary(),
-                  ),
-                  TextButton.icon(
-                    onPressed: _showSearchFilters,
-                    icon: const Icon(Icons.tune, size: 18),
-                    label: const Text('Filters'),
-                    style: TextButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 8),
-                    ),
-                  ),
-                  if (_hasAnyFilter())
-                    TextButton(
-                      onPressed: _clearSearchFilters,
-                      child: const Text('Clear', style: TextStyle(fontSize: 12)),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  Expanded(
-                    child: FilledButton.icon(
-                      icon: const Icon(Icons.camera_alt),
-                      label: _isScanning ? const Text('Scanning...') : const Text('Scan game box'),
-                      onPressed: _isScanning ? null : _scanBox,
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: FilledButton.icon(
-                      icon: const Icon(Icons.casino),
-                      label: const Text('Random game'),
-                      onPressed: _showRandomGame,
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 4),
+  Widget _buildCurrentTab() {
+    switch (_selectedIndex) {
+      case 0:
+        return _buildMyCollectionTab();
+      case 1:
+        return _buildPlayTab();
+      case 2:
+        return _buildDiceTab();
+      case 3:
+        return _buildScoreTab();
+      default:
+        return _buildMyCollectionTab();
+    }
+  }
 
-              // Search header (stays above the scrollable list)
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-                child: Row(
+  // Tab 0: My Collection (default, open book icon)
+  Widget _buildMyCollectionTab() {
+    if (_myCollection.isEmpty) {
+      return Column(
+        children: [
+          const SizedBox(height: 32),
+          Icon(Icons.menu_book, size: 64, color: Colors.grey[400]),
+          const SizedBox(height: 16),
+          Text('No games yet', style: Theme.of(context).textTheme.headlineSmall),
+          const SizedBox(height: 8),
+          const Text('Scan a box, search the library, or import from BGG to get started.'),
+          const SizedBox(height: 24),
+          FilledButton.icon(
+            onPressed: _scanBox,
+            icon: const Icon(Icons.camera_alt),
+            label: const Text('Scan game box'),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _importMyBGGCollection,
+            icon: const Icon(Icons.download),
+            label: const Text('Import from BGG'),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(
+            onPressed: _showManualEntry,
+            icon: const Icon(Icons.edit),
+            label: const Text('Add manual entry'),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: _scanBox,
+                icon: const Icon(Icons.camera_alt),
+                label: const Text('Scan'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: _showManualEntry,
+                icon: const Icon(Icons.edit),
+                label: const Text('Add'),
+              ),
+            ),
+            const SizedBox(width: 8),
+            IconButton(
+              tooltip: 'Rulebooks',
+              onPressed: _showRulebookLibrary,
+              icon: const Icon(Icons.book),
+            ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        Expanded(
+          child: ListView.separated(
+            itemCount: _myCollection.length,
+            separatorBuilder: (_, __) => const Divider(height: 1),
+            itemBuilder: (context, index) {
+              final g = _myCollection[index];
+              return ListTile(
+                leading: g.imageUrl != null && g.imageUrl!.isNotEmpty
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: CachedNetworkImage(
+                          imageUrl: g.imageUrl!,
+                          width: 48,
+                          height: 48,
+                          fit: BoxFit.cover,
+                          placeholder: (c, u) => Container(width: 48, height: 48, color: Colors.grey[300]),
+                          errorWidget: (c, u, e) => const Icon(Icons.image, size: 48),
+                        ),
+                      )
+                    : const Icon(Icons.videogame_asset, size: 48),
+                title: Text(g.name, style: Theme.of(context).textTheme.titleMedium),
+                subtitle: Text([
+                  if (g.year.isNotEmpty) g.year,
+                  g.playerCount,
+                  g.weightString,
+                  if (g.rating != null) '${g.rating!.toStringAsFixed(1)}★',
+                ].where((s) => s.isNotEmpty).join(' · ')),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      'Search (your collection + demo data)',
-                      style: Theme.of(context).textTheme.titleMedium,
+                    IconButton(
+                      icon: const Icon(Icons.play_circle_outline),
+                      onPressed: () => _logPlay(g),
+                      tooltip: 'Log play',
                     ),
-                    if (_isSearchingBgg) ...[
-                      const SizedBox(width: 8),
-                      const SizedBox(
-                        width: 14,
-                        height: 14,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      ),
-                    ],
+                    IconButton(
+                      icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+                      onPressed: () {
+                        setState(() {
+                          _myCollection.removeWhere((x) => x.id == g.id);
+                        });
+                        _saveCollections();
+                      },
+                      tooltip: 'Remove',
+                    ),
                   ],
                 ),
+                onTap: () => _viewGame(g),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 8),
+        Center(
+          child: TextButton.icon(
+            onPressed: () => setState(() => _selectedIndex = 1),
+            icon: const Icon(Icons.search),
+            label: const Text('Search the library to add more'),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Tab 1: Play (game piece icon) - search, filters, What Should We Play
+  Widget _buildPlayTab() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        FilledButton.icon(
+          onPressed: _showWhatShouldWePlay,
+          icon: const Icon(Icons.casino_outlined),
+          label: const Text('What Should We Play?'),
+          style: FilledButton.styleFrom(
+            backgroundColor: Colors.purple,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          'Search the library',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 4),
+        TextField(
+          decoration: const InputDecoration(
+            labelText: 'Search games (your collection + library)',
+            border: OutlineInputBorder(),
+            prefixIcon: Icon(Icons.search),
+          ),
+          onChanged: (value) {
+            setState(() {
+              _searchText = value;
+            });
+            final trimmed = value.trim();
+            _searchDebounce?.cancel();
+
+            final shouldSearch = trimmed.length >= 2 || _hasAnyFilter();
+            if (shouldSearch) {
+              setState(() {
+                _isSearchingBgg = true;
+                _bggSearchResults = [];
+                _searchStart = 0;
+                _hasMoreResults = true;
+              });
+            } else {
+              setState(() {
+                _bggSearchResults = [];
+                _isSearchingBgg = false;
+                _hasMoreResults = false;
+                _lastBggSearchTerm = '';
+              });
+            }
+
+            _searchDebounce = Timer(const Duration(milliseconds: 400), () {
+              _searchBggLibrary(value);
+            });
+          },
+        ),
+        const SizedBox(height: 6),
+        // Filters
+        Row(
+          children: [
+            Expanded(
+              child: _buildActiveFilterSummary(),
+            ),
+            TextButton.icon(
+              onPressed: _showSearchFilters,
+              icon: const Icon(Icons.tune, size: 18),
+              label: const Text('Filters'),
+              style: TextButton.styleFrom(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
               ),
+            ),
+            if (_hasAnyFilter())
+              TextButton(
+                onPressed: _clearSearchFilters,
+                child: const Text('Clear', style: TextStyle(fontSize: 12)),
+              ),
+          ],
+        ),
+        const SizedBox(height: 4),
+        Row(
+          children: [
+            Expanded(
+              child: FilledButton.icon(
+                icon: const Icon(Icons.camera_alt),
+                label: _isScanning ? const Text('Scanning...') : const Text('Scan game box'),
+                onPressed: _isScanning ? null : _scanBox,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: FilledButton.icon(
+                icon: const Icon(Icons.shuffle),
+                label: const Text('Random'),
+                onPressed: _showRandomGame,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 4),
 
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            children: [
+              Text(
+                'Search results',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              if (_isSearchingBgg) ...[
+                const SizedBox(width: 8),
+                const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2)),
+              ],
+            ],
+          ),
+        ),
+
+        Expanded(
+          child: Builder(
+            builder: (context) {
+              if (_isSearchingBgg) {
+                return const Center(child: CircularProgressIndicator());
+              } else if (_bggSearchResults.isEmpty) {
+                final hasQuery = _searchText.trim().length >= 2;
+                final bool isFilterMode = _hasAnyFilter();
+                String message;
+                if (isFilterMode && !hasQuery) {
+                  message = 'No games match your filters.\nTry different filter settings or add a search term.';
+                } else if (isFilterMode) {
+                  message = 'No games match your search and filters.';
+                } else if (hasQuery) {
+                  message = 'No results. Try a different search term.';
+                } else {
+                  message = 'Search or use filters above.\nResults include your collection + library.';
+                }
+                return Center(
+                  child: Text(
+                    message,
+                    textAlign: TextAlign.center,
+                    style: (hasQuery || isFilterMode) ? null : const TextStyle(color: Colors.grey),
+                  ),
+                );
+              } else {
+                final itemCount = _bggSearchResults.length + (_hasMoreResults ? 1 : 0);
+                return ListView.separated(
+                  itemCount: itemCount,
+                  separatorBuilder: (context, index) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    if (_hasMoreResults && index == _bggSearchResults.length) {
+                      return ListTile(
+                        title: const Center(child: Text('Load more results...')),
+                        onTap: _isSearchingBgg ? null : _loadMoreBggResults,
+                        trailing: _isSearchingBgg
+                            ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
+                            : null,
+                      );
+                    }
+                    final game = _bggSearchResults[index];
+                    final theme = Theme.of(context);
+                    return ListTile(
+                      leading: game.imageUrl != null && game.imageUrl!.isNotEmpty
+                          ? ClipRRect(
+                              borderRadius: BorderRadius.circular(4),
+                              child: CachedNetworkImage(
+                                imageUrl: game.imageUrl!,
+                                width: 50,
+                                height: 50,
+                                fit: BoxFit.cover,
+                                placeholder: (c, u) => Container(width: 50, height: 50, color: Colors.grey[300]),
+                                errorWidget: (c, u, e) => const Icon(Icons.image, size: 50),
+                              ),
+                            )
+                          : const Icon(Icons.videogame_asset, size: 50),
+                      title: Text(game.name, style: theme.textTheme.titleMedium),
+                      subtitle: Text(
+                        [
+                          if (game.year.isNotEmpty) game.year,
+                          if (game.minPlayers > 0 || game.maxPlayers > 0) '${game.playerCount} players',
+                          game.weightString,
+                          if (game.rating != null) '${game.rating!.toStringAsFixed(1)}★',
+                        ].where((s) => s.isNotEmpty && s != '?').join(' · '),
+                        style: theme.textTheme.bodySmall,
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _viewGame(game),
+                    );
+                  },
+                );
+              }
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Tab 2: Dice (die icon) - full tab page
+  Widget _buildDiceTab() {
+    // Stateful dice content lives in a separate StatefulWidget for clean state
+    return const _DiceRollerPage();
+  }
+
+  // Tab 3: Score Tracker (scorecard icon)
+  Widget _buildScoreTab() {
+    return _ScoreTrackerPage(
+      players: _scorePlayers,
+      onPlayersChanged: (updated) {
+        setState(() {
+          _scorePlayers = updated;
+        });
+      },
+    );
+  }
+}
+
+// Extracted full-page Dice roller for the Dice tab (type-specific visuals + animation)
+class _DiceRollerPage extends StatefulWidget {
+  const _DiceRollerPage({super.key});
+
+  @override
+  State<_DiceRollerPage> createState() => _DiceRollerPageState();
+}
+
+class _DiceRollerPageState extends State<_DiceRollerPage> {
+  List<String> dieTypes = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
+  String selectedType = 'd6';
+  int numDice = 1;
+  List<int> displayRolls = [];
+  int displayTotal = 0;
+  bool isRolling = false;
+
+  Future<void> _performRoll() async {
+    if (isRolling) return;
+
+    setState(() {
+      isRolling = true;
+      displayRolls = [];
+      displayTotal = 0;
+    });
+
+    int sides = int.parse(selectedType.substring(1));
+
+    // Cool rolling animation: rapid value changes that slow down
+    const int rollSteps = 14;
+    for (int step = 0; step < rollSteps; step++) {
+      await Future.delayed(Duration(milliseconds: 50 + (step * 12)));
+      if (!mounted) return;
+
+      setState(() {
+        displayRolls = List.generate(numDice, (_) => Random().nextInt(sides) + 1);
+      });
+    }
+
+    final finalRolls = List.generate(numDice, (_) => Random().nextInt(sides) + 1);
+    final finalTotal = finalRolls.fold(0, (a, b) => a + b);
+
+    setState(() {
+      displayRolls = finalRolls;
+      displayTotal = finalTotal;
+      isRolling = false;
+    });
+  }
+
+  Widget _buildDieVisual(int value, String type) {
+    // Show stylized die face for common dice
+    return Container(
+      width: 64,
+      height: 64,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: Colors.black87, width: 2),
+        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(1, 2))],
+      ),
+      child: Center(
+        child: Text(
+          '$value',
+          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.black87),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        children: [
+          Text('Digital Dice', style: Theme.of(context).textTheme.headlineMedium),
+          const SizedBox(height: 16),
+          Row(
+            children: [
               Expanded(
-                child: Builder(
-                  builder: (context) {
-                    if (_isSearchingBgg) {
-                      return const Center(
-                        child: CircularProgressIndicator(),
-                      );
-                    } else if (_bggSearchResults.isEmpty) {
-                      final hasQuery = _searchText.trim().length >= 2;
-                      final String message;
-                      final bool isFilterMode = _hasAnyFilter();
-
-                      if (isFilterMode && !hasQuery) {
-                        message = 'No games match your filters.\nTry different filter settings or add a search term.';
-                      } else if (isFilterMode) {
-                        message = 'No games match your search and filters.';
-                      } else if (hasQuery) {
-                        message = 'No results. Try a different search term.';
-                      } else {
-                        message = 'Search above (your collection + demo data).\nUse filters or type a name to find games while we wait for the BGG token.';
-                      }
-
-                      return Center(
-                        child: Text(
-                          message,
-                          textAlign: TextAlign.center,
-                          style: (hasQuery || isFilterMode) ? null : const TextStyle(color: Colors.grey),
-                        ),
-                      );
-                    } else {
-                      final itemCount = _bggSearchResults.length + (_hasMoreResults ? 1 : 0);
-                      return ListView.separated(
-                        itemCount: itemCount,
-                        separatorBuilder: (context, index) => const Divider(height: 1),
-                        itemBuilder: (context, index) {
-                          if (_hasMoreResults && index == _bggSearchResults.length) {
-                            return ListTile(
-                              title: const Center(child: Text('Load more results...')),
-                              onTap: _isSearchingBgg ? null : _loadMoreBggResults,
-                              trailing: _isSearchingBgg
-                                  ? const SizedBox(
-                                      width: 20,
-                                      height: 20,
-                                      child: CircularProgressIndicator(strokeWidth: 2),
-                                    )
-                                  : null,
-                            );
-                          }
-                          final game = _bggSearchResults[index];
-                          final theme = Theme.of(context);
-                          return ListTile(
-                            leading: game.imageUrl != null && game.imageUrl!.isNotEmpty
-                                ? ClipRRect(
-                                    borderRadius: BorderRadius.circular(4),
-                                    child: CachedNetworkImage(
-                                      imageUrl: game.imageUrl!,
-                                      width: 50,
-                                      height: 50,
-                                      fit: BoxFit.cover,
-                                      placeholder: (c, u) => Container(width: 50, height: 50, color: Colors.grey[300]),
-                                      errorWidget: (c, u, e) => Icon(Icons.image, size: 50),
-                                    ),
-                                  )
-                                : const Icon(Icons.videogame_asset, size: 50),
-                            title: Text(
-                              game.name,
-                              style: theme.textTheme.titleMedium,
-                            ),
-                            subtitle: Text(
-                              [
-                                if (game.year.isNotEmpty) game.year,
-                                if (game.minPlayers > 0 || game.maxPlayers > 0) '${game.playerCount} players',
-                                game.weightString,
-                                if (game.rating != null) '${game.rating!.toStringAsFixed(1)}★',
-                              ].where((s) => s.isNotEmpty && s != '?').join(' · '),
-                              style: theme.textTheme.bodySmall,
-                            ),
-                            trailing: const Icon(Icons.chevron_right),
-                            onTap: () => _viewGame(game),
-                          );
-                        },
-                      );
+                child: DropdownButtonFormField<String>(
+                  value: selectedType,
+                  decoration: const InputDecoration(labelText: 'Die Type'),
+                  items: dieTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
+                  onChanged: (val) {
+                    if (val != null && !isRolling) {
+                      setState(() => selectedType = val);
                     }
                   },
                 ),
               ),
-
-              // Bottom actions: handle keyboard by padding bottom with viewInsets
-              // (resizeToAvoidBottomInset is false on Scaffold to prevent double handling)
-              Padding(
-                padding: EdgeInsets.only(
-                  bottom: MediaQuery.of(context).viewInsets.bottom,
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const SizedBox(height: 8),
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          FilledButton.icon(
-                            onPressed: _showWhatShouldWePlay,
-                            icon: const Icon(Icons.casino_outlined),
-                            label: const Text('What Should We Play?'),
-                            style: FilledButton.styleFrom(
-                              backgroundColor: Colors.purple,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: _showCollection,
-                            icon: const Icon(Icons.collections_bookmark),
-                            label: Text('My Collection (${_myCollection.length})'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: _showWishlist,
-                            icon: const Icon(Icons.shopping_cart),
-                            label: Text('Wishlist (${_wishlist.length})'),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: _importMyBGGCollection,
-                            icon: const Icon(Icons.download),
-                            label: const Text('Import collection'),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: _showRulebookLibrary,
-                            icon: const Icon(Icons.book),
-                            label: const Text('Rulebooks'),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: _showDiceRoller,
-                            icon: const Icon(Icons.casino),
-                            label: const Text('Dice'),
-                          ),
-                          const SizedBox(width: 8),
-                          OutlinedButton.icon(
-                            onPressed: _showScoreTracker,
-                            icon: const Icon(Icons.scoreboard),
-                            label: const Text('Score Tracker'),
-                          ),
-                          const SizedBox(width: 8),
-                          TextButton.icon(
-                            onPressed: _showManualEntry,
-                            icon: const Icon(Icons.edit),
-                            label: const Text('Add manual entry'),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+              const SizedBox(width: 12),
+              Expanded(
+                child: DropdownButtonFormField<int>(
+                  value: numDice,
+                  decoration: const InputDecoration(labelText: 'Number of Dice'),
+                  items: List.generate(10, (i) => i + 1)
+                      .map((n) => DropdownMenuItem(value: n, child: Text('$n')))
+                      .toList(),
+                  onChanged: (val) {
+                    if (val != null && !isRolling) {
+                      setState(() => numDice = val);
+                    }
+                  },
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 20),
+          ElevatedButton.icon(
+            onPressed: isRolling ? null : _performRoll,
+            icon: const Icon(Icons.casino),
+            label: Text(isRolling ? 'Rolling...' : 'Roll'),
+            style: ElevatedButton.styleFrom(minimumSize: const Size(160, 48)),
+          ),
+          const SizedBox(height: 24),
+          if (displayRolls.isNotEmpty) ...[
+            Wrap(
+              spacing: 12,
+              runSpacing: 12,
+              children: displayRolls.map((v) => _buildDieVisual(v, selectedType)).toList(),
+            ),
+            const SizedBox(height: 16),
+            if (numDice > 1)
+              Text('Total: $displayTotal', style: Theme.of(context).textTheme.headlineSmall),
+          ] else
+            const Text('Choose type & count, then roll for a result.'),
+          const SizedBox(height: 32),
+          const Text('Tip: Different dice show their number clearly during roll.'),
+        ],
+      ),
+    );
+  }
+}
+
+// Extracted full-page Score Tracker (larger knob + no overflow)
+class _ScoreTrackerPage extends StatefulWidget {
+  final List<Map<String, dynamic>> players;
+  final ValueChanged<List<Map<String, dynamic>>> onPlayersChanged;
+
+  const _ScoreTrackerPage({required this.players, required this.onPlayersChanged});
+
+  @override
+  State<_ScoreTrackerPage> createState() => _ScoreTrackerPageState();
+}
+
+class _ScoreTrackerPageState extends State<_ScoreTrackerPage> {
+  late List<Map<String, dynamic>> _players;
+
+  @override
+  void initState() {
+    super.initState();
+    _players = List.from(widget.players);
+  }
+
+  void _updateParent() {
+    widget.onPlayersChanged(List.from(_players));
+  }
+
+  void _addPlayer() {
+    final nameCtrl = TextEditingController();
+    Color selectedColor = Colors.blue;
+    final colors = [Colors.red, Colors.blue, Colors.green, Colors.orange, Colors.purple, Colors.teal, Colors.pink];
+
+    showDialog(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (context, setColorState) {
+          return AlertDialog(
+            title: const Text('Add Player'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Player Name')),
+                const SizedBox(height: 12),
+                const Text('Choose color:'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  children: colors.map((c) => GestureDetector(
+                    onTap: () {
+                      setColorState(() => selectedColor = c);
+                    },
+                    child: Container(
+                      width: 36,
+                      height: 36,
+                      decoration: BoxDecoration(
+                        color: c,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                          width: selectedColor == c ? 3 : 1,
+                          color: selectedColor == c ? Colors.black : Colors.black38,
+                        ),
+                      ),
+                    ),
+                  )).toList(),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+              FilledButton(
+                onPressed: () {
+                  final name = nameCtrl.text.trim();
+                  if (name.isEmpty) return;
+                  setState(() {
+                    _players.add({
+                      'name': name,
+                      'colorValue': selectedColor.value,
+                      'score': 0,
+                    });
+                  });
+                  _updateParent();
+                  Navigator.pop(c);
+                },
+                child: const Text('Add'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final players = _players;
+    return Column(
+      children: [
+        if (players.isEmpty)
+          Expanded(
+            child: Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.scoreboard, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
+                  const Text('No players yet.\nAdd players and use the large knob to score.'),
+                  const SizedBox(height: 16),
+                  FilledButton.icon(
+                    onPressed: _addPlayer,
+                    icon: const Icon(Icons.person_add),
+                    label: const Text('Add Player'),
+                  ),
+                ],
+              ),
+            ),
+          )
+        else
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.only(bottom: 80),
+              children: players.map((p) {
+                final player = Map<String, dynamic>.from(p);
+                final color = Color(player['colorValue']);
+                return Card(
+                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    child: Row(
+                      children: [
+                        Container(
+                          width: 28,
+                          height: 28,
+                          decoration: BoxDecoration(
+                            color: color,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: Colors.black26),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Text(
+                            player['name'],
+                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        _LargeScoreKnob(
+                          score: player['score'],
+                          color: color,
+                          onScoreChanged: (newScore) {
+                            setState(() {
+                              player['score'] = newScore;
+                              final idx = _players.indexWhere((e) => e['name'] == player['name']);
+                              if (idx != -1) _players[idx] = player;
+                            });
+                            _updateParent();
+                          },
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.close, size: 20),
+                          onPressed: () {
+                            setState(() {
+                              _players.removeWhere((e) => e['name'] == player['name']);
+                            });
+                            _updateParent();
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              FilledButton.icon(
+                onPressed: _addPlayer,
+                icon: const Icon(Icons.person_add),
+                label: const Text('Add Player'),
+              ),
+              if (players.isNotEmpty)
+                OutlinedButton(
+                  onPressed: () {
+                    setState(() => _players.clear());
+                    _updateParent();
+                  },
+                  child: const Text('Reset All'),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LargeScoreKnob extends StatefulWidget {
+  final int score;
+  final Color color;
+  final ValueChanged<int> onScoreChanged;
+
+  const _LargeScoreKnob({
+    required this.score,
+    required this.color,
+    required this.onScoreChanged,
+  });
+
+  @override
+  State<_LargeScoreKnob> createState() => _LargeScoreKnobState();
+}
+
+class _LargeScoreKnobState extends State<_LargeScoreKnob> {
+  double _prevAngle = 0;
+  bool _dragging = false;
+
+  double _angleFromCenter(Offset localPos, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final dx = localPos.dx - center.dx;
+    final dy = localPos.dy - center.dy;
+    return atan2(dy, dx);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // 1.5x larger (was ~80, now 120)
+    const double size = 120;
+    return GestureDetector(
+      onPanStart: (details) {
+        _dragging = true;
+        final s = context.size ?? const Size(size, size);
+        _prevAngle = _angleFromCenter(details.localPosition, s);
+      },
+      onPanUpdate: (details) {
+        if (!_dragging) return;
+        final s = context.size ?? const Size(size, size);
+        final angle = _angleFromCenter(details.localPosition, s);
+        double delta = angle - _prevAngle;
+        if (delta > pi) delta -= 2 * pi;
+        if (delta < -pi) delta += 2 * pi;
+
+        if (delta.abs() > 0.35) {
+          final change = delta > 0 ? 1 : -1;
+          widget.onScoreChanged(widget.score + change);
+          _prevAngle = angle;
+        }
+      },
+      onPanEnd: (_) => _dragging = false,
+      child: Container(
+        width: size,
+        height: size,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: widget.color.withOpacity(0.15),
+          border: Border.all(color: widget.color, width: 4),
+        ),
+        child: Center(
+          child: Text(
+            '${widget.score}',
+            style: TextStyle(
+              fontSize: 36,
+              fontWeight: FontWeight.bold,
+              color: widget.color,
+            ),
           ),
         ),
       ),
     );
   }
 }
+
 
 class GameDetailPage extends StatelessWidget {
   final Game game;
