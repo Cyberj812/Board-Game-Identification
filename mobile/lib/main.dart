@@ -1016,11 +1016,8 @@ class _HomePageState extends State<HomePage> {
       final file = File(filePath);
       await file.writeAsBytes(resp.bodyBytes);
 
-      String? extracted;
-      try {
-        final doc = await PdfDoc.fromPath(filePath);
-        extracted = await doc.text;
-      } catch (_) {}
+      // Text extraction disabled for now (pdf_text had dependency conflict)
+      // final updated will have extractedText: null
 
       final updated = Rulebook(
         id: rule.id,
@@ -1029,7 +1026,6 @@ class _HomePageState extends State<HomePage> {
         title: rule.title,
         url: rule.url,
         localPath: filePath,
-        extractedText: extracted,
         addedDate: rule.addedDate,
       );
 
@@ -1671,7 +1667,7 @@ class _HomePageState extends State<HomePage> {
                         child: Builder(
                           builder: (_) {
                             final filtered = _rulebooks.where((r) {
-                              final text = (r.title + ' ' + (r.extractedText ?? '')).toLowerCase();
+                              final text = (r.title + ' ' + r.gameName).toLowerCase();
                               return text.contains(searchQuery) || r.gameName.toLowerCase().contains(searchQuery);
                             }).toList();
 
@@ -2975,17 +2971,18 @@ Be concrete and reference actual mechanics.
     );
   }
 
-  Future<void> _launch(String url, [BuildContext? ctx]) async {
-    if (url.isEmpty) return;
-    final uri = Uri.parse(url);
-    try {
-      await launchUrl(uri, mode: LaunchMode.externalApplication);
-    } catch (e) {
-      if (ctx != null) {
-        ScaffoldMessenger.of(ctx).showSnackBar(
-          const SnackBar(content: Text('Could not open browser.')),
-        );
-      }
+}
+
+Future<void> _launch(String url, [BuildContext? ctx]) async {
+  if (url.isEmpty) return;
+  final uri = Uri.parse(url);
+  try {
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  } catch (e) {
+    if (ctx != null) {
+      ScaffoldMessenger.of(ctx).showSnackBar(
+        const SnackBar(content: Text('Could not open browser.')),
+      );
     }
   }
 }
