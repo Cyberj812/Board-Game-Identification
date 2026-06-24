@@ -1097,326 +1097,6 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _showDiceRoller() {
-    List<String> dieTypes = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
-    String selectedType = 'd6';
-    int numDice = 1;
-    List<int> displayRolls = [];
-    int displayTotal = 0;
-    bool isRolling = false;
-
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          Future<void> performRoll() async {
-            if (isRolling) return;
-
-            setDialogState(() {
-              isRolling = true;
-              displayRolls = [];
-              displayTotal = 0;
-            });
-
-            int sides = int.parse(selectedType.substring(1));
-
-            // Cool rolling animation: rapid value changes that slow down
-            const int rollSteps = 14;
-            for (int step = 0; step < rollSteps; step++) {
-              await Future.delayed(Duration(milliseconds: 50 + (step * 12))); // slowing effect
-              if (!mounted) return;
-
-              setDialogState(() {
-                displayRolls = List.generate(
-                  numDice,
-                  (_) => Random().nextInt(sides) + 1,
-                );
-              });
-            }
-
-            // Final result
-            final finalRolls = List.generate(numDice, (_) => Random().nextInt(sides) + 1);
-            final finalTotal = finalRolls.fold(0, (a, b) => a + b);
-
-            setDialogState(() {
-              displayRolls = finalRolls;
-              displayTotal = finalTotal;
-              isRolling = false;
-            });
-          }
-
-          return AlertDialog(
-            title: const Text('Digital Dice'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  children: [
-                    Expanded(
-                      child: DropdownButtonFormField<String>(
-                        value: selectedType,
-                        decoration: const InputDecoration(labelText: 'Die Type'),
-                        items: dieTypes.map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
-                        onChanged: (val) {
-                          if (val != null && !isRolling) {
-                            setDialogState(() => selectedType = val);
-                          }
-                        },
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: DropdownButtonFormField<int>(
-                        value: numDice,
-                        decoration: const InputDecoration(labelText: 'Number of Dice'),
-                        items: List.generate(10, (i) => i + 1)
-                            .map((n) => DropdownMenuItem(value: n, child: Text('$n')))
-                            .toList(),
-                        onChanged: (val) {
-                          if (val != null && !isRolling) {
-                            setDialogState(() => numDice = val);
-                          }
-                        },
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                ElevatedButton.icon(
-                  onPressed: isRolling ? null : performRoll,
-                  icon: const Icon(Icons.casino),
-                  label: Text(isRolling ? 'Rolling...' : 'Roll!'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: isRolling ? Colors.grey : null,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // Animated dice results
-                if (displayRolls.isNotEmpty || isRolling)
-                  AnimatedOpacity(
-                    opacity: isRolling ? 0.7 : 1.0,
-                    duration: const Duration(milliseconds: 200),
-                    child: Wrap(
-                      spacing: 10,
-                      runSpacing: 10,
-                      alignment: WrapAlignment.center,
-                      children: (isRolling && displayRolls.isEmpty
-                              ? List.generate(numDice, (_) => 0)
-                              : displayRolls)
-                          .map((r) {
-                        final showValue = r == 0 ? '?' : '$r';
-                        return AnimatedContainer(
-                          duration: const Duration(milliseconds: 180),
-                          width: 52,
-                          height: 52,
-                          decoration: BoxDecoration(
-                            color: Colors.white,
-                            borderRadius: BorderRadius.circular(10),
-                            border: Border.all(
-                              color: isRolling ? Colors.orange : Colors.black87,
-                              width: isRolling ? 3 : 2,
-                            ),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black26,
-                                blurRadius: isRolling ? 2 : 4,
-                                offset: const Offset(2, 2),
-                              ),
-                            ],
-                          ),
-                          child: Center(
-                            child: Text(
-                              showValue,
-                              style: TextStyle(
-                                fontSize: 22,
-                                fontWeight: FontWeight.bold,
-                                color: isRolling ? Colors.orange.shade800 : Colors.black87,
-                              ),
-                            ),
-                          ),
-                        );
-                      }).toList(),
-                    ),
-                  ),
-                if (displayTotal > 0) ...[
-                  const SizedBox(height: 12),
-                  AnimatedDefaultTextStyle(
-                    duration: const Duration(milliseconds: 300),
-                    style: Theme.of(context).textTheme.headlineSmall!.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: Colors.deepPurple,
-                        ),
-                    child: Text('Total: $displayTotal'),
-                  ),
-                ],
-                if (isRolling)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 8),
-                    child: Text(
-                      '🎲 Rolling...',
-                      style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
-                    ),
-                  ),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  void _showScoreTracker() {
-    showDialog(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (context, setDialogState) {
-          return AlertDialog(
-            title: const Text('Score Tracker'),
-            content: SizedBox(
-              width: double.maxFinite,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (_scorePlayers.isEmpty)
-                    const Text('Add players to start tracking scores.\nHold and circle on a score to adjust.'),
-                  const SizedBox(height: 8),
-                  ..._scorePlayers.map((p) {
-                    final player = Map<String, dynamic>.from(p);
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 6),
-                      child: Row(
-                        children: [
-                          Container(
-                            width: 24,
-                            height: 24,
-                            decoration: BoxDecoration(
-                              color: Color(player['colorValue']),
-                              shape: BoxShape.circle,
-                              border: Border.all(color: Colors.black26),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              player['name'],
-                              style: const TextStyle(fontWeight: FontWeight.w600),
-                            ),
-                          ),
-                          _ScoreKnob(
-                            score: player['score'],
-                            color: Color(player['colorValue']),
-                            onScoreChanged: (newScore) {
-                              setState(() {
-                                player['score'] = newScore;
-                                // update in list
-                                final idx = _scorePlayers.indexWhere((e) => e['name'] == player['name']);
-                                if (idx != -1) _scorePlayers[idx] = player;
-                              });
-                              setDialogState(() {});
-                            },
-                          ),
-                        ],
-                      ),
-                    );
-                  }).toList(),
-                  const SizedBox(height: 12),
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                    children: [
-                      TextButton.icon(
-                        onPressed: () => _addScorePlayer(setDialogState),
-                        icon: const Icon(Icons.person_add),
-                        label: const Text('Add Player'),
-                      ),
-                      if (_scorePlayers.isNotEmpty)
-                        TextButton(
-                          onPressed: () {
-                            setState(() => _scorePlayers.clear());
-                            setDialogState(() {});
-                          },
-                          child: const Text('Reset All'),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
-  void _addScorePlayer(StateSetter setDialog) {
-    final nameCtrl = TextEditingController();
-    Color selectedColor = Colors.blue;
-    final colors = [Colors.red, Colors.blue, Colors.green, Colors.orange, Colors.purple, Colors.teal, Colors.pink];
-
-    showDialog(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (context, setColorState) {
-          return AlertDialog(
-            title: const Text('Add Player'),
-            content: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                TextField(controller: nameCtrl, decoration: const InputDecoration(labelText: 'Player Name')),
-                const SizedBox(height: 12),
-                const Text('Choose color:'),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: colors.map((c) => GestureDetector(
-                    onTap: () {
-                      setColorState(() => selectedColor = c);
-                    },
-                    child: Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: c,
-                        shape: BoxShape.circle,
-                        border: Border.all(
-                          width: selectedColor == c ? 3 : 1,
-                          color: selectedColor == c ? Colors.black : Colors.black38,
-                        ),
-                      ),
-                    ),
-                  )).toList(),
-                ),
-              ],
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
-              TextButton(
-                onPressed: () {
-                  if (nameCtrl.text.trim().isEmpty) return;
-                  setState(() {
-                    _scorePlayers.add({
-                      'name': nameCtrl.text.trim(),
-                      'colorValue': selectedColor.value,
-                      'score': 0,
-                    });
-                  });
-                  setDialog(() {});
-                  Navigator.pop(c);
-                },
-                child: const Text('Add'),
-              ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
   void _showCollection() {
     showDialog(
       context: context,
@@ -2710,13 +2390,37 @@ class _DiceRollerPage extends StatefulWidget {
   State<_DiceRollerPage> createState() => _DiceRollerPageState();
 }
 
-class _DiceRollerPageState extends State<_DiceRollerPage> {
+class _DiceRollerPageState extends State<_DiceRollerPage> with SingleTickerProviderStateMixin {
   List<String> dieTypes = ['d4', 'd6', 'd8', 'd10', 'd12', 'd20', 'd100'];
   String selectedType = 'd6';
   int numDice = 1;
   List<int> displayRolls = [];
   int displayTotal = 0;
   bool isRolling = false;
+
+  late AnimationController _spinController;
+  double _spinAngle = 0.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _spinController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 850),
+    )..addListener(() {
+        if (mounted) {
+          setState(() {
+            _spinAngle = _spinController.value * (4 * pi); // ~2 full fast spins
+          });
+        }
+      });
+  }
+
+  @override
+  void dispose() {
+    _spinController.dispose();
+    super.dispose();
+  }
 
   Future<void> _performRoll() async {
     if (isRolling) return;
@@ -2725,14 +2429,20 @@ class _DiceRollerPageState extends State<_DiceRollerPage> {
       isRolling = true;
       displayRolls = [];
       displayTotal = 0;
+      _spinAngle = 0;
     });
+
+    // Start the physical spin animation
+    _spinController.reset();
+    _spinController.forward();
 
     int sides = int.parse(selectedType.substring(1));
 
-    // Cool rolling animation: rapid value changes that slow down
-    const int rollSteps = 14;
+    // Rapid random values while spinning (slows toward the end)
+    const int rollSteps = 16;
     for (int step = 0; step < rollSteps; step++) {
-      await Future.delayed(Duration(milliseconds: 50 + (step * 12)));
+      final delay = 45 + (step * 18); // slows down naturally
+      await Future.delayed(Duration(milliseconds: delay));
       if (!mounted) return;
 
       setState(() {
@@ -2740,32 +2450,74 @@ class _DiceRollerPageState extends State<_DiceRollerPage> {
       });
     }
 
+    // Final locked result
     final finalRolls = List.generate(numDice, (_) => Random().nextInt(sides) + 1);
     final finalTotal = finalRolls.fold(0, (a, b) => a + b);
+
+    // Let spin finish settling a little
+    await Future.delayed(const Duration(milliseconds: 180));
+    if (!mounted) return;
 
     setState(() {
       displayRolls = finalRolls;
       displayTotal = finalTotal;
       isRolling = false;
+      _spinAngle = 0; // settle straight
     });
   }
 
   Widget _buildDieVisual(int value, String type) {
-    // Show stylized die face for common dice
-    return Container(
-      width: 64,
-      height: 64,
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.black87, width: 2),
-        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 4, offset: Offset(1, 2))],
-      ),
-      child: Center(
-        child: Text(
-          '$value',
-          style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.black87),
+    final isD6 = type == 'd6';
+    final isRollingDie = isRolling;
+
+    // Larger, more physical dice
+    const double dieSize = 82;
+
+    // Die face content: special pips for d6, big number otherwise
+    Widget faceContent;
+    if (isD6) {
+      faceContent = CustomPaint(
+        size: Size(dieSize - 10, dieSize - 10),
+        painter: _D6PipsPainter(value),
+      );
+    } else {
+      faceContent = Text(
+        '$value',
+        style: TextStyle(
+          fontSize: 36,
+          fontWeight: FontWeight.w900,
+          color: Colors.black87,
+          shadows: const [Shadow(color: Colors.black26, blurRadius: 1, offset: Offset(0.5, 0.5))],
         ),
+      );
+    }
+
+    // Styling varies slightly by die for immersion
+    final bgColor = isD6 ? Colors.white : const Color(0xFFF5F5F5);
+    final borderColor = isD6 ? Colors.black87 : Colors.black54;
+    final borderWidth = isD6 ? 2.5 : 2.0;
+    final borderRadius = isD6 ? 10.0 : 14.0;
+
+    return Transform.rotate(
+      angle: isRollingDie ? _spinAngle : 0.0,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 80),
+        width: dieSize,
+        height: dieSize,
+        decoration: BoxDecoration(
+          color: bgColor,
+          borderRadius: BorderRadius.circular(borderRadius),
+          border: Border.all(color: borderColor, width: borderWidth),
+          boxShadow: [
+            BoxShadow(
+              color: isRollingDie ? Colors.black38 : Colors.black26,
+              blurRadius: isRollingDie ? 8 : 5,
+              offset: Offset(2, isRollingDie ? 4 : 2),
+              spreadRadius: isRollingDie ? 1 : 0,
+            ),
+          ],
+        ),
+        child: Center(child: faceContent),
       ),
     );
   }
@@ -2777,6 +2529,11 @@ class _DiceRollerPageState extends State<_DiceRollerPage> {
       child: Column(
         children: [
           Text('Digital Dice', style: Theme.of(context).textTheme.headlineMedium),
+          const SizedBox(height: 8),
+          Text(
+            'Choose size & type • Roll for real die visuals',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
           const SizedBox(height: 16),
           Row(
             children: [
@@ -2810,30 +2567,117 @@ class _DiceRollerPageState extends State<_DiceRollerPage> {
             ],
           ),
           const SizedBox(height: 20),
-          ElevatedButton.icon(
+          FilledButton.icon(
             onPressed: isRolling ? null : _performRoll,
             icon: const Icon(Icons.casino),
-            label: Text(isRolling ? 'Rolling...' : 'Roll'),
-            style: ElevatedButton.styleFrom(minimumSize: const Size(160, 48)),
+            label: Text(isRolling ? 'Rolling...' : 'ROLL'),
+            style: FilledButton.styleFrom(
+              minimumSize: const Size(180, 52),
+              textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
           ),
-          const SizedBox(height: 24),
+          const SizedBox(height: 28),
           if (displayRolls.isNotEmpty) ...[
             Wrap(
-              spacing: 12,
-              runSpacing: 12,
+              spacing: 14,
+              runSpacing: 14,
+              alignment: WrapAlignment.center,
               children: displayRolls.map((v) => _buildDieVisual(v, selectedType)).toList(),
             ),
-            const SizedBox(height: 16),
+            const SizedBox(height: 18),
             if (numDice > 1)
-              Text('Total: $displayTotal', style: Theme.of(context).textTheme.headlineSmall),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  'Total: $displayTotal',
+                  style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
           ] else
-            const Text('Choose type & count, then roll for a result.'),
-          const SizedBox(height: 32),
-          const Text('Tip: Different dice show their number clearly during roll.'),
+            Container(
+              padding: const EdgeInsets.all(24),
+              child: const Text(
+                'Select die type and count above,\nthen tap ROLL for animated dice.',
+                textAlign: TextAlign.center,
+              ),
+            ),
+          const SizedBox(height: 24),
+          Text(
+            isRolling
+                ? 'Watch them spin and settle...'
+                : 'd6 shows classic pips • others show large numbers',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+            textAlign: TextAlign.center,
+          ),
         ],
       ),
     );
   }
+}
+
+// Custom painter for realistic d6 pips (classic dice look)
+class _D6PipsPainter extends CustomPainter {
+  final int value;
+
+  _D6PipsPainter(this.value);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.black87
+      ..style = PaintingStyle.fill;
+
+    final double dotRadius = size.width * 0.095;
+    final double c = size.width / 2;
+    final double o = size.width * 0.22; // offset from center for corners
+
+    void dot(double x, double y) {
+      canvas.drawCircle(Offset(x, y), dotRadius, paint);
+    }
+
+    switch (value) {
+      case 1:
+        dot(c, c);
+        break;
+      case 2:
+        dot(c - o, c - o);
+        dot(c + o, c + o);
+        break;
+      case 3:
+        dot(c - o, c - o);
+        dot(c, c);
+        dot(c + o, c + o);
+        break;
+      case 4:
+        dot(c - o, c - o);
+        dot(c + o, c - o);
+        dot(c - o, c + o);
+        dot(c + o, c + o);
+        break;
+      case 5:
+        dot(c - o, c - o);
+        dot(c + o, c - o);
+        dot(c, c);
+        dot(c - o, c + o);
+        dot(c + o, c + o);
+        break;
+      case 6:
+        dot(c - o, c - o);
+        dot(c + o, c - o);
+        dot(c - o, c);
+        dot(c + o, c);
+        dot(c - o, c + o);
+        dot(c + o, c + o);
+        break;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _D6PipsPainter oldDelegate) => oldDelegate.value != value;
 }
 
 // Extracted full-page Score Tracker (larger knob + no overflow)
@@ -2957,29 +2801,44 @@ class _ScoreTrackerPageState extends State<_ScoreTrackerPage> {
                 final player = Map<String, dynamic>.from(p);
                 final color = Color(player['colorValue']);
                 return Card(
-                  margin: const EdgeInsets.symmetric(vertical: 6),
+                  margin: const EdgeInsets.symmetric(vertical: 8),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-                    child: Row(
+                    padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+                    child: Column(
                       children: [
-                        Container(
-                          width: 28,
-                          height: 28,
-                          decoration: BoxDecoration(
-                            color: color,
-                            shape: BoxShape.circle,
-                            border: Border.all(color: Colors.black26),
-                          ),
+                        Row(
+                          children: [
+                            Container(
+                              width: 26,
+                              height: 26,
+                              decoration: BoxDecoration(
+                                color: color,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: Colors.black26),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                player['name'],
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 17),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18),
+                              onPressed: () {
+                                setState(() {
+                                  _players.removeWhere((e) => e['name'] == player['name']);
+                                });
+                                _updateParent();
+                              },
+                              tooltip: 'Remove player',
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Text(
-                            player['name'],
-                            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
+                        const SizedBox(height: 6),
+                        // Large dedicated area for circling gesture
                         _LargeScoreKnob(
                           score: player['score'],
                           color: color,
@@ -2992,15 +2851,8 @@ class _ScoreTrackerPageState extends State<_ScoreTrackerPage> {
                             _updateParent();
                           },
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.close, size: 20),
-                          onPressed: () {
-                            setState(() {
-                              _players.removeWhere((e) => e['name'] == player['name']);
-                            });
-                            _updateParent();
-                          },
-                        ),
+                        const SizedBox(height: 4),
+                        Text('circle finger around knob', style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600])),
                       ],
                     ),
                   ),
@@ -3062,44 +2914,61 @@ class _LargeScoreKnobState extends State<_LargeScoreKnob> {
 
   @override
   Widget build(BuildContext context) {
-    // 1.5x larger (was ~80, now 120)
-    const double size = 120;
+    // Much larger finger-friendly hit area + visual knob
+    const double hitSize = 200.0;      // generous touch target for circling
+    const double visualSize = 150.0;   // big visible knob
+
     return GestureDetector(
+      behavior: HitTestBehavior.opaque,
       onPanStart: (details) {
         _dragging = true;
-        final s = context.size ?? const Size(size, size);
+        final s = context.size ?? const Size(hitSize, hitSize);
         _prevAngle = _angleFromCenter(details.localPosition, s);
       },
       onPanUpdate: (details) {
         if (!_dragging) return;
-        final s = context.size ?? const Size(size, size);
+        final s = context.size ?? const Size(hitSize, hitSize);
         final angle = _angleFromCenter(details.localPosition, s);
         double delta = angle - _prevAngle;
         if (delta > pi) delta -= 2 * pi;
         if (delta < -pi) delta += 2 * pi;
 
-        if (delta.abs() > 0.35) {
+        // More responsive: trigger on smaller angle change
+        if (delta.abs() > 0.28) {
           final change = delta > 0 ? 1 : -1;
           widget.onScoreChanged(widget.score + change);
           _prevAngle = angle;
         }
       },
       onPanEnd: (_) => _dragging = false,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: widget.color.withOpacity(0.15),
-          border: Border.all(color: widget.color, width: 4),
-        ),
+      child: SizedBox(
+        width: hitSize,
+        height: hitSize,
         child: Center(
-          child: Text(
-            '${widget.score}',
-            style: TextStyle(
-              fontSize: 36,
-              fontWeight: FontWeight.bold,
-              color: widget.color,
+          child: Container(
+            width: visualSize,
+            height: visualSize,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: widget.color.withValues(alpha: 0.12),
+              border: Border.all(color: widget.color, width: 5),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.color.withValues(alpha: 0.25),
+                  blurRadius: 12,
+                  spreadRadius: 1,
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                '${widget.score}',
+                style: TextStyle(
+                  fontSize: 42,
+                  fontWeight: FontWeight.bold,
+                  color: widget.color,
+                ),
+              ),
             ),
           ),
         ),
@@ -3761,76 +3630,5 @@ class _PdfViewerPageState extends State<_PdfViewerPage> {
   }
 }
 
-class _ScoreKnob extends StatefulWidget {
-  final int score;
-  final Color color;
-  final ValueChanged<int> onScoreChanged;
 
-  const _ScoreKnob({
-    required this.score,
-    required this.color,
-    required this.onScoreChanged,
-  });
-
-  @override
-  State<_ScoreKnob> createState() => _ScoreKnobState();
-}
-
-class _ScoreKnobState extends State<_ScoreKnob> {
-  double _prevAngle = 0;
-  bool _dragging = false;
-
-  double _angleFromCenter(Offset localPos, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    final dx = localPos.dx - center.dx;
-    final dy = localPos.dy - center.dy;
-    return atan2(dy, dx);
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onPanStart: (details) {
-        _dragging = true;
-        final size = context.size ?? const Size(80, 80);
-        _prevAngle = _angleFromCenter(details.localPosition, size);
-      },
-      onPanUpdate: (details) {
-        if (!_dragging) return;
-        final size = context.size ?? const Size(80, 80);
-        final angle = _angleFromCenter(details.localPosition, size);
-        double delta = angle - _prevAngle;
-        if (delta > pi) delta -= 2 * pi;
-        if (delta < -pi) delta += 2 * pi;
-
-        // Sensitivity: change every ~20 degrees (~0.35 rad)
-        if (delta.abs() > 0.35) {
-          final change = delta > 0 ? 1 : -1;
-          widget.onScoreChanged(widget.score + change);
-          _prevAngle = angle;
-        }
-      },
-      onPanEnd: (_) => _dragging = false,
-      child: Container(
-        width: 80,
-        height: 80,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: widget.color.withOpacity(0.15),
-          border: Border.all(color: widget.color, width: 3),
-        ),
-        child: Center(
-          child: Text(
-            '${widget.score}',
-            style: TextStyle(
-              fontSize: 28,
-              fontWeight: FontWeight.bold,
-              color: widget.color,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-}
 
