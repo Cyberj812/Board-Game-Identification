@@ -16,6 +16,7 @@ class Game {
   final List<Expansion> expansions;
   final List<DigitalPlatform> digitalPlatforms; // Digital availability
   List<PlayLog> playLogs; // For play logging & stats
+  String? houseRules; // Per-game house rules / variant notes for the group
 
   Game({
     required this.id,
@@ -35,6 +36,7 @@ class Game {
     this.expansions = const [],
     this.digitalPlatforms = const [],
     List<PlayLog>? playLogs,
+    this.houseRules,
   }) : playLogs = playLogs ?? [];
 
   void addPlay(PlayLog log) {
@@ -89,6 +91,7 @@ class Game {
       playLogs: (json['play_logs'] as List? ?? [])
           .map((p) => PlayLog.fromJson(p))
           .toList(),
+      houseRules: json['house_rules'],
     );
   }
 
@@ -110,6 +113,7 @@ class Game {
         'expansions': expansions.map((e) => e.toJson()).toList(),
         'digital_platforms': digitalPlatforms.map((d) => d.toJson()).toList(),
         'play_logs': playLogs.map((p) => p.toJson()).toList(),
+        'house_rules': houseRules,
       };
 }
 
@@ -145,12 +149,14 @@ class PlayLog {
   final int players;
   final double? rating; // 1-10
   final String? notes;
+  final String? photoPath; // local path to session photo
 
   PlayLog({
     required this.date,
     required this.players,
     this.rating,
     this.notes,
+    this.photoPath,
   });
 
   factory PlayLog.fromJson(Map<String, dynamic> json) => PlayLog(
@@ -158,6 +164,7 @@ class PlayLog {
         players: json['players'],
         rating: json['rating']?.toDouble(),
         notes: json['notes'],
+        photoPath: json['photo_path'],
       );
 
   Map<String, dynamic> toJson() => {
@@ -165,6 +172,7 @@ class PlayLog {
         'players': players,
         'rating': rating,
         'notes': notes,
+        'photo_path': photoPath,
       };
 }
 

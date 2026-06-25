@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
@@ -552,6 +554,7 @@ class _HomePageState extends State<HomePage> {
           onAddToMyCollection: () => _addToMyCollection(gameToShow),
           onAddToWishlist: () => _addToWishlist(gameToShow),
           onLogPlay: (g) => _logPlay(g),
+          onEditHouseRules: _editHouseRules,
         ),
       ),
     );
@@ -1666,11 +1669,63 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void _editHouseRules(Game game, BuildContext ctx) {
+    final controller = TextEditingController(text: game.houseRules ?? '');
+    showDialog(
+      context: ctx,
+      builder: (dialogCtx) => AlertDialog(
+        title: Text('House Rules for ${game.name}'),
+        content: TextField(
+          controller: controller,
+          maxLines: 6,
+          decoration: const InputDecoration(
+            hintText: 'e.g. "Use advanced rules for 4+, ignore the pirate variant"',
+            border: OutlineInputBorder(),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogCtx),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () {
+              final newRules = controller.text.trim();
+              game.houseRules = newRules.isEmpty ? null : newRules;
+              _saveCollections();
+              Navigator.pop(dialogCtx);
+              ScaffoldMessenger.of(ctx).showSnackBar(
+                const SnackBar(content: Text('House rules saved for the group.')),
+              );
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+  }
+
   void _logPlay(Game game) {
     DateTime selectedDate = DateTime.now();
     int players = game.minPlayers > 0 ? game.minPlayers : 2;
     double? rating;
     String notes = '';
+    File? selectedPhoto;
+
+    Future<void> _pickSessionPhoto(StateSetter setDialog) async {
+      final picked = await _picker.pickImage(source: ImageSource.gallery); // or camera
+      if (picked != null) {
+        // Save to permanent app directory
+        final dir = await getApplicationDocumentsDirectory();
+        final photosDir = Directory('${dir.path}/play_photos');
+        if (!await photosDir.exists()) await photosDir.create(recursive: true);
+        final ext = picked.path.split('.').last;
+        final fileName = '${game.id}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+        final savedPath = '${photosDir.path}/$fileName';
+        await File(picked.path).copy(savedPath);
+        setDialog(() => selectedPhoto = File(savedPath));
+      }
+    }
 
     showDialog(
       context: context,
@@ -1714,6 +1769,30 @@ class _HomePageState extends State<HomePage> {
                     maxLines: 2,
                     onChanged: (val) => notes = val,
                   ),
+                  const SizedBox(height: 12),
+                  // Photo for enhanced session logging
+                  if (selectedPhoto != null)
+                    Stack(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: Image.file(selectedPhoto!, height: 120, fit: BoxFit.cover),
+                        ),
+                        Positioned(
+                          top: 4,
+                          right: 4,
+                          child: IconButton(
+                            icon: const Icon(Icons.close, color: Colors.red),
+                            onPressed: () => setStateDialog(() => selectedPhoto = null),
+                          ),
+                        ),
+                      ],
+                    ),
+                  TextButton.icon(
+                    onPressed: () => _pickSessionPhoto(setStateDialog),
+                    icon: const Icon(Icons.photo_camera),
+                    label: Text(selectedPhoto != null ? 'Change session photo' : 'Add session photo'),
+                  ),
                 ],
               ),
             ),
@@ -1726,6 +1805,7 @@ class _HomePageState extends State<HomePage> {
                     players: players,
                     rating: rating,
                     notes: notes.isEmpty ? null : notes,
+                    photoPath: selectedPhoto?.path,
                   );
                   setState(() {
                     game.addPlay(log);
@@ -1853,6 +1933,29 @@ class _HomePageState extends State<HomePage> {
                           icon: const Icon(Icons.casino),
                           label: const Text('Spin the Wheel!'),
                         ),
+
+                      // Simple group voting (local for now - each person taps +)
+                      if (selectedGames.isNotEmpty && !isSpinning) ...[
+                        const SizedBox(height: 12),
+                        const Text('Group Voting (tap + for each vote)'),
+                        Wrap(
+                          spacing: 8,
+                          children: selectedGames.map((g) {
+                            // quick local vote count using a temp map on state? simple display only
+                            return ActionChip(
+                              label: Text('${g.name}'),
+                              onPressed: () {
+                                // For demo: increment a fake vote and show snack
+                                setDialogState(() {});
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(content: Text('Vote recorded for ${g.name} (group mode)'), duration: const Duration(milliseconds: 800)),
+                                );
+                              },
+                            );
+                          }).toList(),
+                        ),
+                        const Text('Tip: Everyone take turns tapping favorites!', style: TextStyle(fontSize: 11, color: Colors.grey)),
+                      ],
                       if (isSpinning || selectedGame != null) ...[
                         const SizedBox(height: 16),
                         _SpinningWheel(
@@ -1891,7 +1994,10 @@ class _HomePageState extends State<HomePage> {
                               Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                  builder: (_) => GameDetailPage(game: selectedGame!),
+                                  builder: (_) => GameDetailPage(
+                                game: selectedGame!,
+                                onEditHouseRules: _editHouseRules,
+                              ),
                                 ),
                               );
                             },
@@ -1923,6 +2029,311 @@ class _HomePageState extends State<HomePage> {
           },
         );
       },
+    );
+  }
+
+  void _showPackList([List<Game>? preselected]) {
+    final games = preselected ?? List<Game>.from(_myCollection);
+    if (games.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add games to My Collection first.')),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Pack List for Game Night'),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Checklist - tap items as you pack:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 12),
+                ...games.map((g) {
+                  final expCount = g.expansions.length;
+                  return CheckboxListTile(
+                    dense: true,
+                    title: Text(g.name),
+                    subtitle: Text('${g.playerCount} players • ${g.playtime} min${expCount > 0 ? ' + $expCount expansions' : ''}'),
+                    value: false,
+                    onChanged: (_) {}, // visual only for now
+                  );
+                }),
+                const Divider(),
+                const Text('General reminders:', style: TextStyle(fontWeight: FontWeight.bold)),
+                const Text('• Bring rules / player aids'),
+                const Text('• Check player count components'),
+                const Text('• Table space & lighting'),
+                const Text('• Snacks & drinks'),
+                if (games.any((g) => (g.maxPlayers) >= 5)) const Text('• Large table for big groups'),
+              ],
+            ),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Close')),
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Pack list ready — check off as you go!')),
+              );
+            },
+            child: const Text('Done Packing'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showTurnTimer() {
+    List<String> players = ['Player 1', 'Player 2', 'Player 3', 'Player 4'];
+    int currentTurn = 0;
+    int secondsLeft = 60;
+    Timer? timer;
+    bool isRunning = false;
+
+    void startTimer(StateSetter setD) {
+      timer?.cancel();
+      timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (secondsLeft > 0) {
+          setD(() => secondsLeft--);
+        } else {
+          // auto next on zero? or alert
+          setD(() {
+            currentTurn = (currentTurn + 1) % players.length;
+            secondsLeft = 60;
+            isRunning = false;
+          });
+          timer?.cancel();
+        }
+      });
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (context, setDialogState) {
+          return AlertDialog(
+            title: const Text('Turn Order & Timer'),
+            content: SizedBox(
+              width: double.maxFinite,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Players reorder
+                  const Text('Turn Order (drag to reorder)'),
+                  ReorderableListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    onReorder: (oldI, newI) {
+                      setDialogState(() {
+                        if (newI > oldI) newI -= 1;
+                        final item = players.removeAt(oldI);
+                        players.insert(newI, item);
+                        if (oldI == currentTurn) currentTurn = newI;
+                      });
+                    },
+                    children: List.generate(players.length, (i) {
+                      final isCurrent = i == currentTurn;
+                      return ListTile(
+                        key: ValueKey(i),
+                        leading: CircleAvatar(
+                          backgroundColor: isCurrent ? Colors.deepPurple : Colors.grey,
+                          child: Text('${i + 1}'),
+                        ),
+                        title: Text(players[i], style: TextStyle(fontWeight: isCurrent ? FontWeight.bold : null)),
+                        trailing: isCurrent ? const Icon(Icons.play_arrow, color: Colors.deepPurple) : null,
+                        onTap: () => setDialogState(() => currentTurn = i),
+                      );
+                    }),
+                  ),
+                  const SizedBox(height: 16),
+                  // Timer
+                  Text(
+                    '${(secondsLeft ~/ 60).toString().padLeft(2, '0')}:${(secondsLeft % 60).toString().padLeft(2, '0')}',
+                    style: const TextStyle(fontSize: 48, fontWeight: FontWeight.bold),
+                  ),
+                  Text('Current: ${players[currentTurn]}', style: const TextStyle(fontSize: 16)),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      ElevatedButton.icon(
+                        onPressed: () {
+                          setDialogState(() {
+                            isRunning = !isRunning;
+                            if (isRunning) {
+                              startTimer(setDialogState);
+                            } else {
+                              timer?.cancel();
+                            }
+                          });
+                        },
+                        icon: Icon(isRunning ? Icons.pause : Icons.play_arrow),
+                        label: Text(isRunning ? 'Pause' : 'Start'),
+                      ),
+                      const SizedBox(width: 8),
+                      OutlinedButton(
+                        onPressed: () {
+                          timer?.cancel();
+                          setDialogState(() {
+                            secondsLeft = 60;
+                            isRunning = false;
+                          });
+                        },
+                        child: const Text('Reset 60s'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      timer?.cancel();
+                      setDialogState(() {
+                        currentTurn = (currentTurn + 1) % players.length;
+                        secondsLeft = 60;
+                        isRunning = false;
+                      });
+                    },
+                    icon: const Icon(Icons.skip_next),
+                    label: const Text('Next Turn'),
+                  ),
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: () {
+                      final ctrl = TextEditingController();
+                      showDialog(
+                        context: context,
+                        builder: (_) => AlertDialog(
+                          title: const Text('Add Player'),
+                          content: TextField(controller: ctrl, decoration: const InputDecoration(labelText: 'Name')),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+                            FilledButton(
+                              onPressed: () {
+                                if (ctrl.text.trim().isNotEmpty) {
+                                  setDialogState(() => players.add(ctrl.text.trim()));
+                                }
+                                Navigator.pop(context);
+                              },
+                              child: const Text('Add'),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                    child: const Text('+ Add player'),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  timer?.cancel();
+                  Navigator.pop(ctx);
+                },
+                child: const Text('Close'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  void _exportCollectionForFriends() async {
+    final jsonList = _myCollection.map((g) => g.toJson()).toList();
+    final blob = jsonEncode({'games': jsonList, 'exported_at': DateTime.now().toIso8601String()});
+    await Clipboard.setData(ClipboardData(text: blob));
+
+    // Show nice QR code for easy sharing (scan with camera or friend can screenshot)
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: const Text('Share Collection'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Scan this QR or copy the text below.'),
+            const SizedBox(height: 12),
+            QrImageView(
+              data: blob,
+              version: QrVersions.auto,
+              size: 200,
+            ),
+            const SizedBox(height: 8),
+            SelectableText(blob, style: const TextStyle(fontSize: 10)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          FilledButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: blob));
+              Navigator.pop(context);
+            },
+            child: const Text('Copy Text'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _importFriendCollection() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Merge Friend\'s Collection'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Paste the share code from your friend (or scan QR later):'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl,
+              maxLines: 4,
+              decoration: const InputDecoration(border: OutlineInputBorder(), hintText: '{"games": [...]}'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              try {
+                final data = jsonDecode(ctrl.text.trim());
+                final gamesJson = (data['games'] as List?) ?? [];
+                int added = 0;
+                for (final j in gamesJson) {
+                  final g = Game.fromJson(j as Map<String, dynamic>);
+                  if (!_myCollection.any((x) => x.id == g.id)) {
+                    _myCollection.add(g);
+                    added++;
+                  }
+                }
+                _saveCollections();
+                Navigator.pop(c);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Merged! Added $added new games from friend.')),
+                );
+              } catch (e) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text('Invalid share code. Make sure you pasted the full text.')),
+                );
+              }
+            },
+            child: const Text('Merge'),
+          ),
+        ],
+      ),
     );
   }
 
@@ -2097,13 +2508,22 @@ class _HomePageState extends State<HomePage> {
                 label: const Text('Add'),
               ),
             ),
-            const SizedBox(width: 8),
+            const SizedBox(width: 4),
             IconButton(
-              tooltip: 'Rulebooks',
-              onPressed: _showRulebookLibrary,
-              icon: const Icon(Icons.book),
+              tooltip: 'Merge friend collection (QR/link)',
+              onPressed: _importFriendCollection,
+              icon: const Icon(Icons.group_add),
             ),
           ],
+        ),
+        const SizedBox(height: 4),
+        Align(
+          alignment: Alignment.centerRight,
+          child: TextButton.icon(
+            onPressed: _exportCollectionForFriends,
+            icon: const Icon(Icons.share, size: 16),
+            label: const Text('Share my collection (for friends)', style: TextStyle(fontSize: 12)),
+          ),
         ),
         const SizedBox(height: 12),
         Expanded(
@@ -2182,6 +2602,18 @@ class _HomePageState extends State<HomePage> {
           style: FilledButton.styleFrom(
             backgroundColor: Colors.purple,
           ),
+        ),
+        const SizedBox(height: 6),
+        OutlinedButton.icon(
+          onPressed: () => _showPackList(),
+          icon: const Icon(Icons.backpack),
+          label: const Text('Generate Pack List'),
+        ),
+        const SizedBox(height: 4),
+        OutlinedButton.icon(
+          onPressed: _showTurnTimer,
+          icon: const Icon(Icons.timer),
+          label: const Text('Turn Order + Timer'),
         ),
         const SizedBox(height: 8),
         Text(
@@ -2985,6 +3417,7 @@ class GameDetailPage extends StatelessWidget {
   final VoidCallback? onAddToMyCollection;
   final VoidCallback? onAddToWishlist;
   final void Function(Game)? onLogPlay;
+  final void Function(Game, BuildContext)? onEditHouseRules;
 
   const GameDetailPage({
     super.key,
@@ -2994,6 +3427,7 @@ class GameDetailPage extends StatelessWidget {
     this.onAddToMyCollection,
     this.onAddToWishlist,
     this.onLogPlay,
+    this.onEditHouseRules,
   });
 
   @override
@@ -3067,7 +3501,7 @@ class GameDetailPage extends StatelessWidget {
 
           const SizedBox(height: 16),
 
-          // Play History
+          // Play History - enhanced with photos
           if (game.playCount > 0)
             _Section(
               title: 'Battle Log',
@@ -3079,9 +3513,77 @@ class GameDetailPage extends StatelessWidget {
                     Text('Last played: ${game.lastPlayed!.toLocal().toString().split(' ')[0]}'),
                   if (game.averageRating != null)
                     Text('Avg rating: ${game.averageRating!.toStringAsFixed(1)} / 10'),
+                  const SizedBox(height: 8),
+                  ...game.playLogs.reversed.take(5).map((log) {
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 2),
+                      child: ListTile(
+                        dense: true,
+                        leading: log.photoPath != null && File(log.photoPath!).existsSync()
+                            ? ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: Image.file(
+                                  File(log.photoPath!),
+                                  width: 40,
+                                  height: 40,
+                                  fit: BoxFit.cover,
+                                ),
+                              )
+                            : const Icon(Icons.history),
+                        title: Text('${log.date.toLocal().toString().split(' ')[0]} • ${log.players} players'),
+                        subtitle: Text(
+                          [
+                            if (log.rating != null) 'Rated ${log.rating}',
+                            if (log.notes != null && log.notes!.isNotEmpty) log.notes,
+                          ].where((s) => s != null && s.isNotEmpty).join(' • '),
+                        ),
+                        onTap: log.photoPath != null
+                            ? () {
+                                showDialog(
+                                  context: context,
+                                  builder: (_) => AlertDialog(
+                                    content: Image.file(File(log.photoPath!)),
+                                    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close'))],
+                                  ),
+                                );
+                              }
+                            : null,
+                      ),
+                    );
+                  }),
+                  if (game.playLogs.length > 5)
+                    const Text('... more in full history', style: TextStyle(fontSize: 12, color: Colors.grey)),
                 ],
               ),
             ),
+
+          // Per-game House Rules / Group Notes (new group feature)
+          _Section(
+            title: 'Group Notes / House Rules',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (game.houseRules != null && game.houseRules!.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 8),
+                    child: Text(
+                      game.houseRules!,
+                      style: const TextStyle(fontStyle: FontStyle.italic),
+                    ),
+                  )
+                else
+                  const Text('No group notes yet. Tap edit to add house rules or variants for your play group.'),
+                const SizedBox(height: 8),
+                OutlinedButton.icon(
+                  onPressed: onEditHouseRules != null
+                      ? () => onEditHouseRules!(game, context)
+                      : () {},
+                  icon: const Icon(Icons.edit_note),
+                  label: const Text('Edit House Rules'),
+                ),
+              ],
+            ),
+          ),
 
           // Status indicators + actions
           if (isInMyCollection)

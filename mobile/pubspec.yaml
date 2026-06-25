@@ -42,6 +42,7 @@ dependencies:
   path_provider: ^2.1.4
   pdfx: ^2.1.0
   open_filex: ^4.4.0
+  qr_flutter: ^4.1.0  # for generating shareable QR codes for friend collection merge
   # Note: You can choose to open rulebooks with Google PDF Viewer (or any installed viewer)
   # via the "Open externally" button. pdfx provides optional in-app viewing.
 
