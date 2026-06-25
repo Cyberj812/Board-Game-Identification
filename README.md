@@ -121,6 +121,34 @@ Future improvements (easy to add):
 - [ ] In-app bug submission / feedback tab or "Contact Us" section for reporting issues and suggesting improvements
 - [ ] Full local/offline BoardGameGeek database: pre-populate or download a local copy of (most) BGG games so the app can search the entire library without live API calls (with optional periodic sync)
 
+### Group & Social Features (for board gamer groups, game nights, clubs & friends)
+
+#### Planning & Coordination
+- [ ] Game Night Planner — pick date + expected group size, auto-suggest games from collections that fit time/weight/players, simple availability poll (shareable link or QR), and auto-generated "pack list" (what games + components to bring)
+- [ ] Group Library Merge — temporarily merge collections from multiple people (via link/QR code or local share). See "who owns this?", filter suggestions across the combined group library
+- [ ] "What Should We Play?" Group Voting — create a shortlist from the existing picker; friends vote/rank directly on their phones; support ranked-choice, approval voting, or live results
+
+#### During the Game
+- [ ] Group Turn Tracker + Timer — visual player order (drag to reorder), per-player timers, total game time, phase timers (e.g. "Planning phase"), "next player" button
+- [ ] Shared / Multi-Device Score Tracker — one person hosts the session; others join via link or QR code and update scores in real time from their own phones
+- [ ] Quick House Rules & Variant Notes — per-game persistent notepad that travels with the game. "Common mistakes we always make", house rules, variant notes — easy to pull up mid-session
+- [ ] Component & Setup Helper — player-count-aware setup checklists, live component tracker during play ("who has the green cubes right now?")
+
+#### After the Game & Memories
+- [ ] Rich Session Logging — record the game + final scores + winner + duration + who was there + optional table photo + quick notes/moments
+- [ ] Group Leaderboards & Stats — win rates within your specific friend group, "most improved", revenge board (who beats who the most), most-played games together, average playtime trends
+- [ ] Play History Timeline — chronological view of game nights with photos and notes. "This day last year we played..."
+
+#### Social & Sharing
+- [ ] Friend Profiles & Preferences — each person can mark their preferred weight, favorite mechanics, max playtime they enjoy. Game suggestions respect the whole group's preferences
+- [ ] Shareable Collection Links — "Here's my shelf" shareable link or QR code that friends can browse (with wishlist visibility)
+- [ ] Borrow / Lend Tracker — simple tracking of games lent between friends with dates and optional reminders
+
+#### Discovery & Teaching for Groups
+- [ ] "Gateway" / New Player Mode — special filters for teach-friendly games (lower weight, shorter teach time, high language independence) + auto-generated short "teach script" summaries pulled from rulebook data
+- [ ] Group-Aware Expansion Suggester — "You own the base game and these friends do too — here are the expansions that would actually get used by our group"
+- [ ] "We Need Something Different" Randomizer — smart random picks from the collection with constraints (different weight/theme from the last few games, something no one has played in 6+ months, etc.)
+
 ## Mobile App (Flutter)
 
 Full native mobile experience for both platforms (Android, iOS, Windows, macOS, Linux, Web).

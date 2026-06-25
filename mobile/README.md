@@ -91,6 +91,34 @@ mobile/
 - [ ] In-app bug submission / feedback tab or "Contact Us" section for reporting issues and suggesting improvements
 - [ ] Full local/offline BoardGameGeek database: pre-populate or download a local copy of (most) BGG games so the app can search the entire library without live API calls (with optional periodic sync)
 
+### Group & Social Features (for game nights, friends & clubs)
+
+See the main [README.md](../README.md) for the full categorized list. Highlights include:
+
+**Planning & Coordination**
+- [ ] Game Night Planner (availability polls, pack lists, group-size-aware suggestions)
+- [ ] Group Library Merge (combine collections via link/QR)
+- [ ] Group voting on "What Should We Play?"
+
+**During Play**
+- [ ] Multi-player turn tracker + timers
+- [ ] Shared real-time score tracker (join via QR/link)
+- [ ] House rules & variant notes per game
+- [ ] Setup & component checklist / tracker
+
+**After Play & Memories**
+- [ ] Rich session logging with photos
+- [ ] Group-specific leaderboards & stats
+- [ ] Game night timeline / history
+
+**Social & Discovery**
+- [ ] Friend preference profiles
+- [ ] Shareable collection links
+- [ ] Borrow/lend tracker
+- [ ] Gateway game mode + teach scripts for new players
+- [ ] Group-aware expansion suggester
+- [ ] "Play something different" smart randomizer
+
 ## Feedback
 
 Found a bug or want to suggest an improvement?
