@@ -57,7 +57,7 @@ flutter build apk --debug
 BGG token and username are configured via --dart-define at build time (see bggToken / bggUsername in main.dart).
 
 To build with your token:
-flutter build apk --debug --dart-define=BGG_TOKEN=5591ebec-2659-4aaf-91fb-4287832a1e75 --dart-define=BGG_USERNAME=cyberjunkie812
+flutter build apk --debug --dart-define=BGG_TOKEN=YOUR_TOKEN_HERE --dart-define=BGG_USERNAME=YOUR_USERNAME_HERE
 
 Token is passed as ?token=... (and Bearer header) for BGG XML API.
 Update the username if different for your token.
