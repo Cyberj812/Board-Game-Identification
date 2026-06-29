@@ -22,6 +22,10 @@ import 'models/game.dart';
 import 'services/ocr_service.dart';
 import 'services/bgg_service.dart';
 
+// BGG config - real token for live API (demo fallback removed)
+const String bggToken = '5591ebec-2659-4aaf-91fb-4287832a1e75';
+const String bggUsername = 'cyberjunkie812';
+
 void main() {
   runApp(const BoardGameSnapApp());
 }
@@ -151,7 +155,7 @@ class _HomePageState extends State<HomePage> {
   String? _lastHostIp;
   int? _lastHostPort;
 
-  // Search (BGG when token available, demo + local collection otherwise)
+  // Search (live BGG + your local collection)
   Timer? _searchDebounce;
   List<Game> _bggSearchResults = [];
   bool _isSearchingBgg = false;
@@ -169,10 +173,6 @@ class _HomePageState extends State<HomePage> {
   final _picker = ImagePicker();
   final _ocr = OcrService();
   final _bgg = BggService(token: bggToken);
-
-// Top-level BGG config (your token from https://boardgamegeek.com/applications)
-const String bggToken = '5591ebec-2659-4aaf-91fb-4287832a1e75';
-const String bggUsername = 'cyberjunkie812';  // update if needed
 
   late ConfettiController _confettiController;
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -1021,7 +1021,7 @@ const String bggUsername = 'cyberjunkie812';  // update if needed
       if (imported.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No games returned from BGG. Check username/token or try again later (rate limits apply).')),
+            const SnackBar(content: Text('No games returned from BGG. Check username, token validity, or try again (BGG rate limits).')),
           );
         }
         return;
@@ -1044,10 +1044,10 @@ const String bggUsername = 'cyberjunkie812';  // update if needed
         );
         setState(() {});
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Import failed: $e')),
+          const SnackBar(content: Text('Import failed. Check logs or try again.')),
         );
       }
     } finally {
@@ -2822,7 +2822,7 @@ const String bggUsername = 'cyberjunkie812';  // update if needed
           const SizedBox(height: 16),
           Text('No games yet', style: Theme.of(context).textTheme.headlineSmall),
           const SizedBox(height: 8),
-          const Text('Scan a box, search the library, or import from BGG to get started.'),
+          const Text('Scan a box, search BGG, or import from BGG to get started.'),
           const SizedBox(height: 24),
           FilledButton.icon(
             onPressed: _scanBox,
@@ -2940,7 +2940,7 @@ const String bggUsername = 'cyberjunkie812';  // update if needed
           child: TextButton.icon(
             onPressed: () => setState(() => _selectedIndex = 1),
             icon: const Icon(Icons.search),
-            label: const Text('Search the library to add more'),
+            label: const Text('Search BGG to add more'),
           ),
         ),
       ],
@@ -2974,13 +2974,13 @@ const String bggUsername = 'cyberjunkie812';  // update if needed
         ),
         const SizedBox(height: 8),
         Text(
-          'Search the library',
+          'Search BGG',
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
         TextField(
           decoration: const InputDecoration(
-            labelText: 'Search games (your collection + library)',
+            labelText: 'Search games (your collection + BGG)',
             border: OutlineInputBorder(),
             prefixIcon: Icon(Icons.search),
           ),
@@ -3089,7 +3089,7 @@ const String bggUsername = 'cyberjunkie812';  // update if needed
                 } else if (hasQuery) {
                   message = 'No results. Try a different search term.';
                 } else {
-                  message = 'Search or use filters above.\nResults include your collection + library.';
+                  message = 'Search or use filters above.\nResults include your collection + BGG.';
                 }
                 return Center(
                   child: Text(

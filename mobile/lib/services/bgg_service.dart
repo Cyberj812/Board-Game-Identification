@@ -9,7 +9,7 @@ class BggService {
   BggService({this.token});
 
   // FALLBACK DEMO DATA (only used if token is missing/empty)
-  // With your real BGG token (5591ebec-2659-4aaf-91fb-4287832a1e75) live API calls are used.
+  // Live API calls are used with the configured BGG token.
   // These samples remain as a safety net for offline/testing scenarios.
   static final List<Game> _demoGames = [
     Game(
@@ -127,10 +127,18 @@ class BggService {
     return h;
   }
 
+  String _appendToken(String url) {
+    if (token != null && token!.isNotEmpty) {
+      final separator = url.contains('?') ? '&' : '?';
+      return '$url${separator}token=${Uri.encodeComponent(token!)}';
+    }
+    return url;
+  }
+
   Future<List<Game>> searchGames(String query, {int limit = 10, int start = 0}) async {
     if (query.trim().length < 2) return [];
 
-    // Live BGG when token present (your token is now configured in main.dart).
+    // Live BGG (token configured).
     // Local collection is still blended in the UI layer for immediate results.
     if (token == null || token!.isEmpty) {
       return _searchDemo(query, limit: limit);
@@ -139,6 +147,7 @@ class BggService {
     // Only include start if >0. BGG search pagination is unreliable; omitting for initial searches helps.
     String url = '$_base/search?query=${Uri.encodeComponent(query)}&type=boardgame';
     if (start > 0) url += '&start=$start';
+    url = _appendToken(url);
     final uri = Uri.parse(url);
 
     List<Game> parsed = [];
@@ -213,7 +222,8 @@ class BggService {
 
     // Always try the live BGG API first to get complete data (expansions, full stats, etc.)
     try {
-      final uri = Uri.parse('$_base/thing?id=$id&stats=1');
+      final url = _appendToken('$_base/thing?id=$id&stats=1');
+      final uri = Uri.parse(url);
       final resp = await http.get(uri, headers: _headers);
 
       if (resp.statusCode == 200) {
@@ -303,8 +313,9 @@ class BggService {
       return [];
     }
 
-    final uri = Uri.parse(
+    final url = _appendToken(
         '$_base/collection?username=$username&own=1&subtype=boardgame&excludessubtype=boardgameexpansion');
+    final uri = Uri.parse(url);
 
     http.Response resp;
     try {
