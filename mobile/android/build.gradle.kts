@@ -19,6 +19,22 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Workaround for plugins that don't declare 'namespace' (required by AGP 8+ / Gradle 8+).
+// Prevents "Namespace not specified" configuration errors for some Flutter pub plugins
+// (e.g. flutter_secure_storage's Android part). The :app module already has an explicit namespace.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android {
+                @Suppress("DEPRECATION")
+                if (namespace == null) {
+                    namespace = "com.cyberj812.boardgamesnap." + project.name.replace(":", ".")
+                }
+            }
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

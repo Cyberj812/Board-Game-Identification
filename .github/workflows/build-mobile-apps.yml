@@ -68,11 +68,12 @@ jobs:
         run: flutter clean
         working-directory: mobile
 
-      - name: Clean Gradle caches (ensure correct AGP version is resolved)
+      - name: Clean Gradle caches (force fresh AGP + plugin resolution)
         run: |
           rm -rf ~/.gradle/caches/modules-2/files-2.1/com.android.tools.build || true
           rm -rf ~/.gradle/caches/modules-2/metadata-* || true
-          cd android && ./gradlew clean --no-daemon || true
+          rm -rf ~/.gradle/caches/transforms-* || true
+          rm -rf ~/.gradle/caches/build-cache-* || true
         working-directory: mobile
 
       - name: Build debug APK
