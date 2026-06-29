@@ -36,7 +36,7 @@ jobs:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          key: ${{ runner.os }}-gradle-${{ hashFiles('mobile/android/gradle/wrapper/gradle-wrapper.properties', 'mobile/android/settings.gradle.kts', 'mobile/android/build.gradle.kts', 'mobile/android/app/build.gradle.kts', 'mobile/android/gradle.properties') }}
           restore-keys: |
             ${{ runner.os }}-gradle-
 
@@ -48,6 +48,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.44.2'
           channel: 'stable'
           cache: true
 
@@ -65,6 +66,13 @@ jobs:
 
       - name: Clean project
         run: flutter clean
+        working-directory: mobile
+
+      - name: Clean Gradle caches (ensure correct AGP version is resolved)
+        run: |
+          rm -rf ~/.gradle/caches/modules-2/files-2.1/com.android.tools.build || true
+          rm -rf ~/.gradle/caches/modules-2/metadata-* || true
+          cd android && ./gradlew clean --no-daemon || true
         working-directory: mobile
 
       - name: Build debug APK
@@ -123,6 +131,7 @@ jobs:
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.44.2'
           channel: 'stable'
           cache: true
 
