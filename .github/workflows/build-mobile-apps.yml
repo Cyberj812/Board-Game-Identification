@@ -63,11 +63,25 @@ jobs:
         working-directory: mobile
 
       - name: Build debug APK
-        run: flutter config --enable-android && flutter build apk --debug --stacktrace --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }}
+        run: |
+          flutter config --enable-android
+          flutter build apk --debug --stacktrace --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
+            echo "=== BUILD FAILED - DUMPING RECENT GRADLE/FLUTTER LOGS ==="
+            find . -type f \( -name "*.log" -o -name "build.log" \) -path "*/build/*" -o -path "*/.gradle/*" | head -10 | while read log; do
+              echo "----- $log -----"
+              tail -200 "$log" || true
+            done
+            echo "----- END LOGS -----"
+            exit 1
+          }
         working-directory: mobile
 
       - name: List build output
-        run: ls -la build/app/outputs/flutter-apk/ || true
+        run: |
+          echo "=== APK OUTPUT DIR ==="
+          ls -la build/app/outputs/flutter-apk/ || true
+          echo "=== ANDROID BUILD LOGS (last 100 lines if exist) ==="
+          find build -name "*.log" -o -name "build.log" | head -5 | xargs tail -100 || true
         working-directory: mobile
         if: always()
 
