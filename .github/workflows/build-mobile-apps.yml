@@ -46,10 +46,6 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Disable Swift Package Manager (force CocoaPods for plugins)
-        run: flutter config --no-enable-swift-package-manager
-        working-directory: mobile
-
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: mobile
@@ -69,7 +65,7 @@ jobs:
       - name: Build debug APK
         run: |
           flutter config --enable-android
-          flutter build apk --debug
+          flutter build apk --debug --android-skip-build-dependency-validation --stacktrace
         working-directory: mobile
 
       - name: List build output
