@@ -44,6 +44,7 @@ jobs:
         uses: subosito/flutter-action@v2
         with:
           channel: 'stable'
+          cache: true
 
       - name: Get Flutter dependencies
         run: flutter pub get
@@ -89,13 +90,16 @@ jobs:
         with:
           channel: 'stable'
           cache: true
+          cache: true
 
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: mobile
 
       - name: Install CocoaPods
-        run: sudo gem install cocoapods
+        run: |
+          sudo gem install cocoapods
+          echo "$(gem env gemdir)/bin" >> $GITHUB_PATH
         shell: bash
 
       - name: Pod install
@@ -113,10 +117,9 @@ jobs:
       - name: Package iOS app as IPA (unsigned)
         working-directory: mobile
         run: |
-          cd build/ios/iphoneos
           mkdir -p Payload
-          cp -R Runner.app Payload/
-          zip -r -y ../../../board-game-snap-ios-unsigned.ipa Payload
+          cp -R build/ios/iphoneos/Runner.app Payload/
+          zip -r -y board-game-snap-ios-unsigned.ipa Payload
         shell: bash
 
       - name: Upload iOS IPA artifact
