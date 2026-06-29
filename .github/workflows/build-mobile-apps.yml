@@ -78,11 +78,11 @@ jobs:
 
       - name: Debug resolved Gradle / AGP (for build failure diagnosis)
         run: |
-          cd android
           echo "=== Gradle wrapper version ==="
-          ./gradlew --version --no-daemon --quiet || true
+          chmod +x ./android/gradlew || true
+          ./android/gradlew --version --no-daemon --quiet || true
           echo "=== Attempting to show resolved AGP for app ==="
-          ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match or gradle resolution skipped/failed at this stage)"
+          ./android/gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match or gradle resolution skipped/failed at this stage)"
         working-directory: mobile
         if: always()
 
@@ -90,8 +90,10 @@ jobs:
         run: |
           flutter config --enable-android
           # Extra gradle clean + refresh to force re-resolution after cache purges / shims
-          (cd android && ./gradlew clean --no-daemon --refresh-dependencies || true)
-          flutter build apk --debug --stacktrace --no-daemon --no-build-cache --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
+          # Use direct path to gradlew (cwd is 'mobile') and ensure executable
+          chmod +x ./android/gradlew || true
+          ./android/gradlew clean --no-daemon --refresh-dependencies || true
+          flutter build apk --debug --verbose --no-daemon --no-build-cache --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
             echo "=== BUILD FAILED - DUMPING RECENT GRADLE/FLUTTER LOGS ==="
             find . -type f \( -name "*.log" -o -name "build.log" \) -path "*/build/*" -o -path "*/.gradle/*" | head -10 | while read log; do
               echo "----- $log -----"
