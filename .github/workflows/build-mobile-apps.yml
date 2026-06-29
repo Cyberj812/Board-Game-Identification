@@ -58,14 +58,10 @@ jobs:
         run: yes | flutter doctor --android-licenses || true
         working-directory: mobile
 
-      - name: Clean local.properties for CI
-        run: rm -f android/local.properties || true
-        working-directory: mobile
-
       - name: Build debug APK
         run: |
           flutter config --enable-android
-          flutter build apk --debug --android-skip-build-dependency-validation --stacktrace
+          flutter build apk --debug --stacktrace
         working-directory: mobile
 
       - name: List build output
