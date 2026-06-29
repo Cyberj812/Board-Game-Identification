@@ -96,25 +96,20 @@ jobs:
           flutter build ios --release --no-codesign
         working-directory: mobile
 
-      - name: Package iOS app as IPA (unsigned / simulator-friendly)
+      - name: Package iOS app as IPA (unsigned)
         working-directory: mobile
         run: |
           cd build/ios/iphoneos
           mkdir -p Payload
           cp -R Runner.app Payload/
           zip -r -y ../../../board-game-snap-ios-unsigned.ipa Payload
-          # Also zip the .app for easy Simulator use
-          cd ..
-          zip -r -y ../../board-game-snap-ios-simulator.app.zip iphoneos/Runner.app
         shell: bash
 
-      - name: Upload iOS artifacts
+      - name: Upload iOS IPA artifact
         uses: actions/upload-artifact@v4
         with:
-          name: board-game-snap-ios
-          path: |
-            mobile/board-game-snap-ios-unsigned.ipa
-            mobile/board-game-snap-ios-simulator.app.zip
+          name: board-game-snap-ios-unsigned
+          path: mobile/board-game-snap-ios-unsigned.ipa
 
       - name: Create iOS Release
         uses: softprops/action-gh-release@v2
@@ -124,7 +119,7 @@ jobs:
           name: BoardGameSnap iOS (unsigned IPA, build ${{ github.run_number }})
           draft: false
           prerelease: true
-          files: mobile/board-game-snap-ios.ipa
+          files: mobile/board-game-snap-ios-unsigned.ipa
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
