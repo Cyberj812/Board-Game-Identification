@@ -49,10 +49,14 @@ jobs:
         run: flutter pub get
         working-directory: mobile
 
+      - name: Accept Android licenses
+        run: flutter doctor --android-licenses || true
+        working-directory: mobile
+
       - name: Build debug APK
         run: |
           flutter config --enable-android
-          flutter build apk --debug --android-skip-build-dependency-validation
+          flutter build apk --debug
         working-directory: mobile
 
       - name: Upload Android APK artifact
@@ -88,6 +92,16 @@ jobs:
 
       - name: Get Flutter dependencies
         run: flutter pub get
+        working-directory: mobile
+
+      - name: Install CocoaPods
+        run: sudo gem install cocoapods
+        shell: bash
+
+      - name: Pod install
+        run: |
+          cd ios
+          pod install --repo-update
         working-directory: mobile
 
       - name: Build iOS (release, no codesign)
