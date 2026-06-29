@@ -40,6 +40,11 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
+      - name: Setup Gradle
+        uses: gradle/gradle-build-action@v3
+        with:
+          gradle-version: wrapper
+
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
