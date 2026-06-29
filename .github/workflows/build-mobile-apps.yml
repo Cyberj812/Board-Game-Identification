@@ -54,8 +54,16 @@ jobs:
         run: flutter pub get
         working-directory: mobile
 
+      - name: Flutter doctor
+        run: flutter doctor -v
+        working-directory: mobile
+
       - name: Accept Android licenses
         run: flutter doctor --android-licenses || true
+        working-directory: mobile
+
+      - name: Clean local.properties for CI
+        run: rm -f android/local.properties || true
         working-directory: mobile
 
       - name: Build debug APK
@@ -63,6 +71,11 @@ jobs:
           flutter config --enable-android
           flutter build apk --debug
         working-directory: mobile
+
+      - name: List build output
+        run: ls -la build/app/outputs/flutter-apk/ || true
+        working-directory: mobile
+        if: always()
 
       - name: Upload Android APK artifact
         uses: actions/upload-artifact@v4
