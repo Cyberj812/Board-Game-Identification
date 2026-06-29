@@ -55,7 +55,7 @@ jobs:
         working-directory: mobile
 
       - name: Accept Android licenses
-        run: flutter doctor --android-licenses || true
+        run: yes | flutter doctor --android-licenses || true
         working-directory: mobile
 
       - name: Clean local.properties for CI
