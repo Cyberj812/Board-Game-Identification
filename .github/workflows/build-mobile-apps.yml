@@ -58,6 +58,10 @@ jobs:
         run: yes | flutter doctor --android-licenses || true
         working-directory: mobile
 
+      - name: Clean project
+        run: flutter clean
+        working-directory: mobile
+
       - name: Build debug APK
         run: flutter config --enable-android && flutter build apk --debug --stacktrace --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }}
         working-directory: mobile
