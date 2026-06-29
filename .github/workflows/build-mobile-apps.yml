@@ -89,6 +89,8 @@ jobs:
       - name: Build debug APK
         run: |
           flutter config --enable-android
+          # Extra gradle clean + refresh to force re-resolution after cache purges / shims
+          (cd android && ./gradlew clean --no-daemon --refresh-dependencies || true)
           flutter build apk --debug --stacktrace --no-daemon --no-build-cache --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
             echo "=== BUILD FAILED - DUMPING RECENT GRADLE/FLUTTER LOGS ==="
             find . -type f \( -name "*.log" -o -name "build.log" \) -path "*/build/*" -o -path "*/.gradle/*" | head -10 | while read log; do
