@@ -17,14 +17,16 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'models/game.dart';
 import 'services/ocr_service.dart';
 import 'services/bgg_service.dart';
 
-// BGG config - real token for live API (demo fallback removed)
-const String bggToken = '5591ebec-2659-4aaf-91fb-4287832a1e75';
-const String bggUsername = 'cyberjunkie812';
+// BGG config - defaults from build time (CI secrets). Runtime login via dialog overrides for other users.
+// Use your own BGG username + generate a personal token at boardgamegeek.com for collection imports.
+const String _defaultBggToken = String.fromEnvironment('BGG_TOKEN', defaultValue: '');
+const String _defaultBggUsername = String.fromEnvironment('BGG_USERNAME', defaultValue: '');
 
 void main() {
   runApp(const BoardGameSnapApp());
@@ -172,7 +174,12 @@ class _HomePageState extends State<HomePage> {
 
   final _picker = ImagePicker();
   final _ocr = OcrService();
-  final _bgg = BggService(token: bggToken);
+  late BggService _bgg;
+
+  // Runtime BGG credentials (loaded from secure storage or defaults). Allows other users to login.
+  String _bggUsername = _defaultBggUsername;
+  String? _bggRuntimeToken;
+  final _secureStorage = const FlutterSecureStorage();
 
   late ConfettiController _confettiController;
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -184,6 +191,7 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _loadCollection();
+    _loadBggCredentials();
     _confettiController = ConfettiController(duration: const Duration(seconds: 2));
     // Show no games by default - only when user searches
     _bggSearchResults = [];
@@ -215,6 +223,96 @@ class _HomePageState extends State<HomePage> {
           .map((jsonStr) => Rulebook.fromJson(jsonDecode(jsonStr)))
           .toList();
     });
+  }
+
+  Future<void> _loadBggCredentials() async {
+    final storedUser = await _secureStorage.read(key: 'bgg_username');
+    final storedToken = await _secureStorage.read(key: 'bgg_token');
+
+    final effectiveUser = (storedUser != null && storedUser.trim().isNotEmpty)
+        ? storedUser.trim()
+        : _defaultBggUsername;
+    final effectiveToken = (storedToken != null && storedToken.trim().isNotEmpty)
+        ? storedToken.trim()
+        : _defaultBggToken;
+
+    setState(() {
+      _bggUsername = effectiveUser.isNotEmpty ? effectiveUser : 'your_bgg_username';
+      _bggRuntimeToken = effectiveToken.isNotEmpty ? effectiveToken : null;
+    });
+
+    _bgg = BggService(token: _bggRuntimeToken);
+  }
+
+  Future<void> _saveBggCredentials(String username, String token) async {
+    final cleanUser = username.trim();
+    final cleanToken = token.trim();
+    await _secureStorage.write(key: 'bgg_username', value: cleanUser);
+    await _secureStorage.write(key: 'bgg_token', value: cleanToken);
+
+    setState(() {
+      _bggUsername = cleanUser.isNotEmpty ? cleanUser : 'your_bgg_username';
+      _bggRuntimeToken = cleanToken.isNotEmpty ? cleanToken : null;
+    });
+    _bgg = BggService(token: _bggRuntimeToken);
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('BGG login saved for $_bggUsername. Collection imports now use your account.')),
+      );
+    }
+  }
+
+  void _showBggLoginDialog() {
+    final userCtrl = TextEditingController(text: _bggUsername == 'your_bgg_username' ? '' : _bggUsername);
+    final tokenCtrl = TextEditingController(text: _bggRuntimeToken ?? '');
+
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Login with your BGG Account'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('Enter your BoardGameGeek username and personal API token to import *your* collection and use authenticated features.'),
+              const SizedBox(height: 8),
+              const Text('1. Go to boardgamegeek.com and log in.\n2. Generate a token (Account → API / "Create new token").\n3. Paste username + token below. Token is stored only on this device.', style: TextStyle(fontSize: 12)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: userCtrl,
+                decoration: const InputDecoration(labelText: 'BGG Username', border: OutlineInputBorder()),
+                textInputAction: TextInputAction.next,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: tokenCtrl,
+                decoration: const InputDecoration(labelText: 'Personal BGG Token (keep secret)', border: OutlineInputBorder()),
+                obscureText: true,
+                maxLines: 1,
+              ),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () {
+              final u = userCtrl.text.trim();
+              final t = tokenCtrl.text.trim();
+              if (u.isEmpty) {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Username is required.')));
+                return;
+              }
+              Navigator.pop(c);
+              _saveBggCredentials(u, t);
+            },
+            child: const Text('Save & Use'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<void> _saveCollections() async {
@@ -575,6 +673,85 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  /// Present a selection sheet for ambiguous OCR / search results.
+  /// Returns the chosen Game (basic info) or null if dismissed.
+  Future<Game?> _selectGameFromCandidates(List<Game> candidates, String ocrText) async {
+    if (candidates.isEmpty) return null;
+    if (candidates.length == 1) return candidates.first; // single confident result: auto-accept (rare)
+
+    return showModalBottomSheet<Game>(
+      context: context,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.6,
+          minChildSize: 0.4,
+          maxChildSize: 0.9,
+          expand: false,
+          builder: (_, scrollController) => Container(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Select the correct game', style: Theme.of(ctx).textTheme.titleLarge),
+                const SizedBox(height: 4),
+                Text('OCR read: "$ocrText"\nPick the right match (or tap below to search manually).', style: Theme.of(ctx).textTheme.bodySmall),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: ListView.separated(
+                    controller: scrollController,
+                    itemCount: candidates.length,
+                    separatorBuilder: (_, __) => const Divider(),
+                    itemBuilder: (c, i) {
+                      final g = candidates[i];
+                      return ListTile(
+                        leading: g.imageUrl != null && g.imageUrl!.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: g.imageUrl!,
+                                width: 48, height: 48, fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => const Icon(Icons.videogame_asset),
+                              )
+                            : const Icon(Icons.videogame_asset, size: 48),
+                        title: Text(g.name),
+                        subtitle: Text([
+                          if (g.year.isNotEmpty) g.year,
+                          if (g.minPlayers > 0 || g.maxPlayers > 0) g.playerCount + 'p',
+                          if (g.weight != null) 'wt ${g.weight!.toStringAsFixed(1)}',
+                        ].join(' · ')),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.pop(ctx, g),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: () {
+                          Navigator.pop(ctx);
+                          setState(() { _searchText = ocrText; });
+                          _searchBggLibrary(ocrText);
+                        },
+                        child: const Text('None match — search manually'),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    TextButton(
+                      onPressed: () => Navigator.pop(ctx),
+                      child: const Text('Cancel'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Future<void> _scanBox() async {
     final XFile? image = await _picker.pickImage(
       source: ImageSource.camera,
@@ -609,19 +786,30 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // Clean OCR text for better matching
+      // Clean OCR text for better matching. Keep a "phrase" version too.
       String cleaned = text.replaceAll(RegExp(r'[^a-zA-Z0-9\s]'), ' ')
                           .replaceAll(RegExp(r'\s+'), ' ')
                           .trim();
 
-      var results = await _bgg.searchGames(cleaned, limit: 5);
-
-      if (results.isEmpty && cleaned.length > 3) {
-        // Try the longest word as fallback
+      // Collect candidates from a couple of smart queries (union by id) to improve recall for box titles.
+      final seen = <String>{};
+      List<Game> results = [];
+      // Try full cleaned phrase first (best for "Brass Pittsburgh", "Wingspan", etc.)
+      if (cleaned.length >= 2) {
+        final r1 = await _bgg.searchGames(cleaned, limit: 6);
+        for (final g in r1) {
+          if (!seen.contains(g.id)) { seen.add(g.id); results.add(g); }
+        }
+      }
+      if (results.length < 4 && cleaned.length > 3) {
+        // Fallback: longest significant word or two
         final words = cleaned.split(' ').where((w) => w.length > 2).toList();
         words.sort((a, b) => b.length.compareTo(a.length));
         if (words.isNotEmpty) {
-          results = await _bgg.searchGames(words.first, limit: 5);
+          final r2 = await _bgg.searchGames(words.take(2).join(' '), limit: 5);
+          for (final g in r2) {
+            if (!seen.contains(g.id)) { seen.add(g.id); results.add(g); }
+          }
         }
       }
 
@@ -654,35 +842,43 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
-      // Pick the best (first) candidate that respects filters when possible
-      final top = finalCandidates.first;
-      final fullGame = await _bgg.getGameDetails(top.id);
-
-      if (fullGame != null && mounted) {
-        // Do NOT auto add. User decides in the detail view.
-        // This supports shopping (add to wishlist) and owning (add to my collection).
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (_) => GameDetailPage(
-              game: fullGame,
-              isInMyCollection: _myCollection.any((g) => g.id == fullGame.id),
-              isInWishlist: _wishlist.any((g) => g.id == fullGame.id),
-              onAddToMyCollection: () => _addToMyCollection(fullGame),
-              onAddToWishlist: () => _addToWishlist(fullGame),
-              onLogPlay: (g) => _logPlay(g),
+      // Show selection instead of auto-picking the first (fixes mis-scans like "Brass Pittsburgh" -> wrong top hit).
+      // User chooses the correct game from BGG candidates.
+      final chosen = await _selectGameFromCandidates(finalCandidates, cleaned);
+      if (chosen != null && mounted) {
+        final fullGame = await _bgg.getGameDetails(chosen.id);
+        if (fullGame != null && mounted) {
+          // Do NOT auto add. User decides in the detail view.
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => GameDetailPage(
+                game: fullGame,
+                isInMyCollection: _myCollection.any((g) => g.id == fullGame.id),
+                isInWishlist: _wishlist.any((g) => g.id == fullGame.id),
+                onAddToMyCollection: () => _addToMyCollection(fullGame),
+                onAddToWishlist: () => _addToWishlist(fullGame),
+                onLogPlay: (g) => _logPlay(g),
+                onEditHouseRules: _editHouseRules,
+              ),
             ),
-          ),
-        );
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not fetch game details.')),
-        );
+          );
+        } else if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Could not fetch game details.')),
+          );
+        }
+      } else if (mounted && finalCandidates.isNotEmpty) {
+        // User dismissed the selector without picking
+        setState(() {
+          _searchText = cleaned;
+        });
+        _searchBggLibrary(cleaned);
       }
-    } catch (e) {
+    } catch (_) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Scan error: $e')),
+          const SnackBar(content: Text('Scan error. Please try again.')),
         );
       }
     } finally {
@@ -1012,16 +1208,15 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _importMyBGGCollection() async {
-    if (_bgg is! BggService) return; // safety
     setState(() => _isSearchingBgg = true);
 
     try {
-      final imported = await _bgg.fetchUserCollection(bggUsername);
+      final imported = await _bgg.fetchUserCollection(_bggUsername);
 
       if (imported.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('No games returned from BGG. Check username, token validity, or try again (BGG rate limits).')),
+            const SnackBar(content: Text('No games returned from BGG. Check your BGG username or try again later (rate limits apply).')),
           );
         }
         return;
@@ -1097,8 +1292,8 @@ class _HomePageState extends State<HomePage> {
           const SnackBar(content: Text('PDF downloaded. Text extracted for search.')),
         );
       }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Download error: $e')));
+    } catch (_) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Download error. Please try again.')));
     }
   }
 
@@ -2322,27 +2517,41 @@ class _HomePageState extends State<HomePage> {
         actions: [
           TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               try {
                 final data = jsonDecode(ctrl.text.trim());
                 final gamesJson = (data['games'] as List?) ?? [];
                 int added = 0;
+                final existingIds = _myCollection.map((g) => g.id).toSet();
+                final toAdd = <Game>[];
                 for (final j in gamesJson) {
                   final g = Game.fromJson(j as Map<String, dynamic>);
-                  if (!_myCollection.any((x) => x.id == g.id)) {
-                    _myCollection.add(g);
-                    added++;
+                  if (g.id.isNotEmpty && !existingIds.contains(g.id)) {
+                    toAdd.add(g);
+                    existingIds.add(g.id); // prevent dups inside the pasted list too
                   }
                 }
-                _saveCollections();
+                if (toAdd.isNotEmpty) {
+                  setState(() {
+                    _myCollection.addAll(toAdd);
+                    added = toAdd.length;
+                  });
+                  await _saveCollections();
+                }
                 Navigator.pop(c);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Merged! Added $added new games from friend.')),
-                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(added > 0
+                        ? 'Merged! Added $added new games from friend.'
+                        : 'No new games (already in your collection).')),
+                  );
+                }
               } catch (e) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Invalid share code. Make sure you pasted the full text.')),
-                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Invalid share code. Make sure you pasted the full text.')),
+                  );
+                }
               }
             },
             child: const Text('Merge'),
@@ -2833,7 +3042,13 @@ class _HomePageState extends State<HomePage> {
           OutlinedButton.icon(
             onPressed: _importMyBGGCollection,
             icon: const Icon(Icons.download),
-            label: const Text('Import from BGG'),
+            label: Text('Import from BGG (${_bggUsername})'),
+          ),
+          const SizedBox(height: 8),
+          TextButton.icon(
+            onPressed: _showBggLoginDialog,
+            icon: const Icon(Icons.account_circle, size: 18),
+            label: const Text('Set / change BGG login (for your collection)'),
           ),
           const SizedBox(height: 12),
           OutlinedButton.icon(
@@ -2870,6 +3085,11 @@ class _HomePageState extends State<HomePage> {
               tooltip: 'Merge friend collection (QR/link)',
               onPressed: _importFriendCollection,
               icon: const Icon(Icons.group_add),
+            ),
+            IconButton(
+              tooltip: 'BGG login ($_bggUsername)',
+              onPressed: _showBggLoginDialog,
+              icon: const Icon(Icons.account_circle),
             ),
           ],
         ),
@@ -4186,8 +4406,8 @@ class GameDetailPage extends StatelessWidget {
                               title: Text(e.name),
                               trailing: const Icon(Icons.chevron_right, size: 16),
                               onTap: () async {
-                                // Fetch full details for the expansion so we get its box art
-                                final fullExp = await BggService(token: bggToken).getGameDetails(e.id);
+                                // Fetch full details for the expansion so we get its box art (unauthenticated call is fine for public game data)
+                                final fullExp = await BggService().getGameDetails(e.id);
                                 if (fullExp != null) {
                                   Navigator.push(
                                     context,

@@ -8,9 +8,8 @@ class BggService {
 
   BggService({this.token});
 
-  // FALLBACK DEMO DATA (only used if token is missing/empty)
-  // Live API calls are used with the configured BGG token.
-  // These samples remain as a safety net for offline/testing scenarios.
+  // DEMO DATA kept only as an ultimate last-resort (currently not used for search/details).
+  // Live BGG XML API v2 calls are preferred (token optional for search/details; required for private collection fetches).
   static final List<Game> _demoGames = [
     Game(
       id: '13',
@@ -138,12 +137,8 @@ class BggService {
   Future<List<Game>> searchGames(String query, {int limit = 10, int start = 0}) async {
     if (query.trim().length < 2) return [];
 
-    // Live BGG (token configured).
-    // Local collection is still blended in the UI layer for immediate results.
-    if (token == null || token!.isEmpty) {
-      return _searchDemo(query, limit: limit);
-    }
-
+    // Live BGG API (token optional for basic public searches and higher rate limits).
+    // Collection import requires a valid personal token for the username.
     // Only include start if >0. BGG search pagination is unreliable; omitting for initial searches helps.
     String url = '$_base/search?query=${Uri.encodeComponent(query)}&type=boardgame';
     if (start > 0) url += '&start=$start';
@@ -215,12 +210,8 @@ class BggService {
   }
 
   Future<Game?> getGameDetails(String id) async {
-    // Live BGG details (demo fallback only if no token)
-    if (token == null || token!.isEmpty) {
-      return _getDemoGame(id);
-    }
-
-    // Always try the live BGG API first to get complete data (expansions, full stats, etc.)
+    // Live BGG details. Token is optional (public game info is available unauthenticated).
+    // Always try the live BGG API to get complete data (expansions, full stats, etc.)
     try {
       final url = _appendToken('$_base/thing?id=$id&stats=1');
       final uri = Uri.parse(url);

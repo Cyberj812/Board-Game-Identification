@@ -3,6 +3,9 @@
     <!-- Required permissions for camera and BGG API -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- For network_info_plus (WiFi IP in score sharing) -->
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <application
         android:label="board_game_snap"
         android:name="${applicationName}"
