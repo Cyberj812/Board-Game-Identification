@@ -153,16 +153,22 @@ Future improvements (easy to add):
 
 Full native mobile experience for both platforms (Android, iOS, Windows, macOS, Linux, Web).
 
-### Download Pre-built APK (easiest for testing)
+### Download Pre-built Apps (easiest for testing)
 
 1. Go to the [Actions tab](https://github.com/Cyberj812/Board-Game-Identification/actions)
-2. Click on the latest **"Build Android APK"** workflow run
-3. Download the **board-game-snap-debug** artifact (the `app-debug.apk`)
+2. Click on the latest workflow run (named "Build Mobile Apps (Android + iOS)")
+3. Download artifacts:
+   - **board-game-snap-android-debug** → Android debug APK
+   - **board-game-snap-ios** → unsigned iOS IPA
 
-Or trigger a manual build:
-- Go to Actions → "Build Android APK" → "Run workflow"
+**Android**: Install the .apk (enable "Install unknown apps").
 
-Install the APK on your Android device (enable "Install unknown apps").
+**iOS**:
+- The .ipa is unsigned (common for CI).
+- On a Mac with Xcode: open the .ipa (or extract Payload/Runner.app) and run on Simulator.
+- For real devices: sign it yourself or use TestFlight/App Store (requires Apple Developer Program membership).
+
+To trigger manually: Actions tab → "Build Mobile Apps..." → "Run workflow".
 
 ```bash
 # If building locally

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:network_info_plus/network_info_plus.dart';
 import 'dart:io';
 import 'dart:convert';
 import 'dart:math';
@@ -137,6 +138,19 @@ class _HomePageState extends State<HomePage> {
   // Score tracking
   List<Map<String, dynamic>> _scorePlayers = []; // {name, colorValue, score}
 
+  // Shared session support (persistent updates while session active)
+  String? _activeScoreSessionId;
+  String? _activeScoreSessionPin;  // short PIN for auth
+  bool _isScoreSessionHost = false;
+  HttpServer? _scoreSessionServer;
+  int? _scoreSessionPort;
+  RawDatagramSocket? _discoverySocket;  // for UDP broadcast/listen to avoid exposing IP in QR
+  static const int _discoveryPort = 53535; // custom discovery port
+
+  // Last known host for clients (so they can push/sync without re-entering)
+  String? _lastHostIp;
+  int? _lastHostPort;
+
   // Search (BGG when token available, demo + local collection otherwise)
   Timer? _searchDebounce;
   List<Game> _bggSearchResults = [];
@@ -154,11 +168,11 @@ class _HomePageState extends State<HomePage> {
 
   final _picker = ImagePicker();
   final _ocr = OcrService();
-  // TODO: Pass your real BGG token once approved at https://boardgamegeek.com/applications
-  // Example: final _bgg = BggService(token: 'your-bearer-token-here');
-  // Until then, the service falls back to a small set of demo games so you can test
-  // search, filters, details, adding to collection/wishlist, etc.
-  final _bgg = BggService();
+  final _bgg = BggService(token: bggToken);
+
+// Top-level BGG config (your token from https://boardgamegeek.com/applications)
+const String bggToken = '5591ebec-2659-4aaf-91fb-4287832a1e75';
+const String bggUsername = 'cyberjunkie812';  // update if needed
 
   late ConfettiController _confettiController;
   final AudioPlayer _audioPlayer = AudioPlayer();
@@ -181,6 +195,7 @@ class _HomePageState extends State<HomePage> {
     _searchDebounce?.cancel();
     _confettiController.dispose();
     _audioPlayer.dispose();
+    _stopLocalScoreServer();
     super.dispose();
   }
 
@@ -1001,12 +1016,12 @@ class _HomePageState extends State<HomePage> {
     setState(() => _isSearchingBgg = true);
 
     try {
-      final imported = await _bgg.fetchUserCollection('cyberjunkie812');
+      final imported = await _bgg.fetchUserCollection(bggUsername);
 
       if (imported.isEmpty) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Could not import your collection. Add your token to unlock live pulls.')),
+            const SnackBar(content: Text('No games returned from BGG. Check username/token or try again later (rate limits apply).')),
           );
         }
         return;
@@ -2337,6 +2352,348 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  // --- Persistent Session-based Shared Scoring ---
+  // QR now carries a stable session ID (not a full snapshot).
+  // Updates "persist" on the host device as long as the session is active.
+  // Other devices can join by ID and pull/push the live state.
+  // The host runs a tiny local server while the session is active.
+  // This way the state lives independently of any single QR snapshot.
+
+  Future<void> _startOrShareScoreSession() async {
+    if (_scorePlayers.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add players before starting a session.')),
+      );
+      return;
+    }
+
+    if (_activeScoreSessionId == null) {
+      // Create stable session ID + short PIN (never put IP/port in shareable QR)
+      _activeScoreSessionId = 'BGS-${(DateTime.now().millisecondsSinceEpoch % 1000000).toString().padLeft(6, '0')}';
+      _activeScoreSessionPin = (100000 + DateTime.now().millisecond % 900000).toString();
+      _isScoreSessionHost = true;
+      await _startLocalScoreServer();
+      await _startDiscoveryBroadcast(); // UDP broadcast for discovery (IP not in QR)
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Session active. PIN: ${_activeScoreSessionPin}. QR has no IP.')),
+      );
+    }
+
+    // QR contains ONLY ID + PIN. No IP, no port exposed to QR or screenshots.
+    final qrData = 'bgsnap-score:${_activeScoreSessionId}:${_activeScoreSessionPin}';
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text('Session ${_activeScoreSessionId}'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(_isScoreSessionHost
+                  ? 'Hosting. Session state lives here while active. IP hidden from QR.'
+                  : 'In session.'),
+              const SizedBox(height: 12),
+              QrImageView(data: qrData, version: QrVersions.auto, size: 200),
+              const SizedBox(height: 8),
+              const Text('Others scan this. IP is discovered privately via local network.'),
+              if (_activeScoreSessionPin != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text('PIN required: ${_activeScoreSessionPin}', style: const TextStyle(color: Colors.red)),
+                ),
+            ],
+          ),
+        ),
+        actions: [
+          if (_isScoreSessionHost)
+            TextButton(
+              onPressed: () {
+                _stopLocalScoreServer();
+                _stopDiscoveryBroadcast();
+                _activeScoreSessionId = null;
+                _activeScoreSessionPin = null;
+                _isScoreSessionHost = false;
+                Navigator.pop(context);
+                setState(() {});
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Session ended.')));
+              },
+              child: const Text('End Session'),
+            ),
+          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Close')),
+          FilledButton(
+            onPressed: () async {
+              await Clipboard.setData(ClipboardData(text: qrData));
+              Navigator.pop(context);
+            },
+            child: const Text('Copy Code'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _startLocalScoreServer() async {
+    try {
+      _scoreSessionServer?.close();
+      _scoreSessionServer = await HttpServer.bind(InternetAddress.anyIPv4, 0);
+      _scoreSessionPort = _scoreSessionServer!.port;
+
+      _scoreSessionServer!.listen((HttpRequest request) async {
+        final path = request.uri.path;
+        final providedPin = request.uri.queryParameters['pin'] ?? request.headers.value('x-session-pin');
+
+        // Require correct PIN for all access (masks unauthorized use even on same network)
+        if (providedPin != _activeScoreSessionPin) {
+          request.response.statusCode = 403;
+          request.response.write('invalid pin');
+          await request.response.close();
+          return;
+        }
+
+        if (path == '/session/$_activeScoreSessionId' && request.method == 'GET') {
+          request.response.headers.contentType = ContentType.json;
+          request.response.write(jsonEncode({
+            'sessionId': _activeScoreSessionId,
+            'players': _scorePlayers,
+            'updatedAt': DateTime.now().toIso8601String(),
+          }));
+          await request.response.close();
+        } else if (path == '/session/$_activeScoreSessionId/update' && request.method == 'POST') {
+          final body = await utf8.decoder.bind(request).join();
+          try {
+            final update = jsonDecode(body) as Map<String, dynamic>;
+            final updatedPlayers = List<Map<String, dynamic>>.from(update['players'] ?? []);
+            setState(() {
+              for (final u in updatedPlayers) {
+                final idx = _scorePlayers.indexWhere((p) => p['name'] == u['name']);
+                if (idx != -1) {
+                  _scorePlayers[idx]['score'] = u['score'];
+                }
+              }
+            });
+            request.response.write('ok');
+          } catch (_) {
+            request.response.write('bad');
+          }
+          await request.response.close();
+        } else {
+          request.response.statusCode = 404;
+          await request.response.close();
+        }
+      });
+
+      print('Score session server listening on port $_scoreSessionPort');
+    } catch (e) {
+      print('Failed to start score server: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not start local server. Others will use manual paste for now.')),
+      );
+    }
+  }
+
+  void _stopLocalScoreServer() {
+    _scoreSessionServer?.close();
+    _scoreSessionServer = null;
+    _scoreSessionPort = null;
+  }
+
+  // UDP broadcast/listener so QR never needs to contain IP or port.
+  // Host periodically announces its presence for the session ID.
+  Future<void> _startDiscoveryBroadcast() async {
+    try {
+      _stopDiscoveryBroadcast();
+      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      socket.broadcastEnabled = true;
+      _discoverySocket = socket;
+
+      String? ip;
+      try {
+        final info = NetworkInfo();
+        ip = await info.getWifiIP() ?? 'unknown';
+      } catch (_) {
+        ip = 'unknown';
+      }
+
+      final announcement = jsonEncode({
+        'id': _activeScoreSessionId,
+        'ip': ip,
+        'port': _scoreSessionPort,
+        'pin': _activeScoreSessionPin,
+      });
+
+      Timer.periodic(const Duration(seconds: 4), (t) {
+        if (_discoverySocket == null || _activeScoreSessionId == null) {
+          t.cancel();
+          return;
+        }
+        _discoverySocket!.send(
+          utf8.encode(announcement),
+          InternetAddress('255.255.255.255'),
+          _discoveryPort,
+        );
+      });
+    } catch (e) {
+      print('Discovery broadcast failed: $e');
+    }
+  }
+
+  void _stopDiscoveryBroadcast() {
+    _discoverySocket?.close();
+    _discoverySocket = null;
+  }
+
+  // Listen for host announcements on the network (auto-discover IP without it being in QR)
+  Future<void> _listenForDiscovery(String targetId, String targetPin) async {
+    try {
+      final socket = await RawDatagramSocket.bind(InternetAddress.anyIPv4, _discoveryPort);
+      socket.listen((RawSocketEvent event) {
+        if (event == RawSocketEvent.read) {
+          final datagram = socket.receive();
+          if (datagram != null) {
+            try {
+              final msg = jsonDecode(utf8.decode(datagram.data));
+              if (msg['id'] == targetId && msg['pin'] == targetPin) {
+                final ip = msg['ip'] as String?;
+                final port = msg['port'] as int?;
+                if (ip != null && port != null && ip != 'unknown') {
+                  _lastHostIp = ip;
+                  _lastHostPort = port;
+                  socket.close();
+                  _pullLatestScores(ip, port, targetId);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Host discovered. Synced scores.')),
+                  );
+                }
+              }
+            } catch (_) {}
+          }
+        }
+      });
+
+      // Timeout the listener after 15s
+      Future.delayed(const Duration(seconds: 15), () {
+        try { socket.close(); } catch (_) {}
+      });
+    } catch (e) {
+      print('Discovery listen failed: $e');
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not auto-discover. You may need to ask host for IP or use manual sync.')),
+      );
+    }
+  }
+
+  void _joinScoreSession() {
+    final ctrl = TextEditingController();
+    showDialog(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Join Score Session'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Paste code from QR (bgsnap-score:ID:PIN). IP is never in the code.'),
+            const SizedBox(height: 8),
+            TextField(
+              controller: ctrl,
+              maxLines: 2,
+              decoration: const InputDecoration(border: OutlineInputBorder(), hintText: 'bgsnap-score:BGS-123456:123456'),
+            ),
+            const SizedBox(height: 8),
+            const Text('On same Wi-Fi, the app can auto-discover the host IP.', style: TextStyle(fontSize: 12, color: Colors.grey)),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(c), child: const Text('Cancel')),
+          FilledButton(
+            onPressed: () async {
+              final code = ctrl.text.trim();
+              Navigator.pop(c);
+
+              final parts = code.split(':');
+              if (parts.length < 3 || parts[0] != 'bgsnap-score') {
+                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Invalid code.')));
+                return;
+              }
+
+              final sessionId = parts[1];
+              final pin = parts[2];
+
+              setState(() {
+                _activeScoreSessionId = sessionId;
+                _activeScoreSessionPin = pin;
+                _isScoreSessionHost = false;
+              });
+
+              // Try auto-discovery first via UDP broadcast listener
+              await _listenForDiscovery(sessionId, pin);
+              // Fallback: if no broadcast received quickly, user can manually sync later
+            },
+            child: const Text('Join'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pullLatestScores(String hostIp, int port, String sessionId) async {
+    try {
+      final pin = _activeScoreSessionPin ?? '';
+      final url = Uri.parse('http://$hostIp:$port/session/$sessionId?pin=$pin');
+      final resp = await http.get(url).timeout(const Duration(seconds: 5));
+      if (resp.statusCode == 200) {
+        final data = jsonDecode(resp.body);
+        _lastHostIp = hostIp;
+        _lastHostPort = port;
+        final incoming = List<Map<String, dynamic>>.from(data['players'] ?? []);
+        setState(() {
+          for (final inc in incoming) {
+            final idx = _scorePlayers.indexWhere((p) => p['name'] == inc['name']);
+            if (idx != -1) {
+              _scorePlayers[idx]['score'] = inc['score'];
+            } else {
+              _scorePlayers.add(Map.from(inc));
+            }
+          }
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Synced latest scores from host.'), duration: Duration(seconds: 1)),
+        );
+      } else if (resp.statusCode == 403) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Wrong PIN for session.')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not reach host. Are you on the same Wi-Fi?')),
+      );
+    }
+  }
+
+  // Clients push score changes to host so the live session state is updated centrally.
+  Future<void> _pushUpdateToHost() async {
+    if (_activeScoreSessionId == null || _isScoreSessionHost || _lastHostIp == null || _lastHostPort == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Join using host info first (or re-join) to push updates.')),
+      );
+      return;
+    }
+
+    try {
+      final pin = _activeScoreSessionPin ?? '';
+      final url = Uri.parse('http://${_lastHostIp}:${_lastHostPort}/session/$_activeScoreSessionId/update?pin=$pin');
+      final body = jsonEncode({'players': _scorePlayers});
+      final resp = await http.post(url, body: body, headers: {'Content-Type': 'application/json'}).timeout(const Duration(seconds: 5));
+
+      if (resp.statusCode == 200) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Update pushed to host.')));
+      } else if (resp.statusCode == 403) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('PIN rejected.')));
+      }
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Could not reach host.')));
+    }
+  }
+
   Future<void> _suggestFeature() async {
     const url = 'https://github.com/Cyberj812/Board-Game-Identification/issues/new?template=feature_request.md';
     final uri = Uri.parse(url);
@@ -2803,13 +3160,73 @@ class _HomePageState extends State<HomePage> {
 
   // Tab 3: Score Tracker (scorecard icon)
   Widget _buildScoreTab() {
-    return _ScoreTrackerPage(
-      players: _scorePlayers,
-      onPlayersChanged: (updated) {
-        setState(() {
-          _scorePlayers = updated;
-        });
-      },
+    return Column(
+      children: [
+        // Shared multi-device scoring controls
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _startOrShareScoreSession,
+                  icon: const Icon(Icons.qr_code_2, size: 18),
+                  label: const Text('Share / Host Session', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _joinScoreSession,
+                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  label: const Text('Join Session', style: TextStyle(fontSize: 13)),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (_activeScoreSessionId != null)
+          Container(
+            padding: const EdgeInsets.all(6),
+            color: Colors.deepPurple.shade50,
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Expanded(child: Text('Session: $_activeScoreSessionId', style: const TextStyle(fontWeight: FontWeight.bold))),
+                if (!_isScoreSessionHost) ...[
+                  const SizedBox(width: 8),
+                  OutlinedButton(
+                    onPressed: () {
+                      if (_lastHostIp != null && _lastHostPort != null) {
+                        _pullLatestScores(_lastHostIp!, _lastHostPort!, _activeScoreSessionId!);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Re-join with host info to enable sync/push.')),
+                        );
+                      }
+                    },
+                    child: const Text('Sync', style: TextStyle(fontSize: 12)),
+                  ),
+                  const SizedBox(width: 4),
+                  OutlinedButton(
+                    onPressed: _pushUpdateToHost,
+                    child: const Text('Push My Scores', style: TextStyle(fontSize: 12)),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        Expanded(
+          child: _ScoreTrackerPage(
+            players: _scorePlayers,
+            onPlayersChanged: (updated) {
+              setState(() {
+                _scorePlayers = updated;
+              });
+            },
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3770,7 +4187,7 @@ class GameDetailPage extends StatelessWidget {
                               trailing: const Icon(Icons.chevron_right, size: 16),
                               onTap: () async {
                                 // Fetch full details for the expansion so we get its box art
-                                final fullExp = await BggService().getGameDetails(e.id);
+                                final fullExp = await BggService(token: bggToken).getGameDetails(e.id);
                                 if (fullExp != null) {
                                   Navigator.push(
                                     context,

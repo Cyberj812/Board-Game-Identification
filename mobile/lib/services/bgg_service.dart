@@ -8,10 +8,9 @@ class BggService {
 
   BggService({this.token});
 
-  // TEMPORARY PLACEHOLDER DATA
-  // Used only when no BGG token is provided (until you register at https://boardgamegeek.com/applications).
-  // Remove this entire block and the _searchDemo / _getDemoGame calls once you have a real token.
-  // These are real-ish samples so you can test search, filters, details, adding to collections, etc.
+  // FALLBACK DEMO DATA (only used if token is missing/empty)
+  // With your real BGG token (5591ebec-2659-4aaf-91fb-4287832a1e75) live API calls are used.
+  // These samples remain as a safety net for offline/testing scenarios.
   static final List<Game> _demoGames = [
     Game(
       id: '13',
@@ -131,8 +130,8 @@ class BggService {
   Future<List<Game>> searchGames(String query, {int limit = 10, int start = 0}) async {
     if (query.trim().length < 2) return [];
 
-    // TEMPORARY: Use demo data until you provide a real BGG token (see BggService constructor).
-  // Also blended with your local collection in the UI for better search experience.
+    // Live BGG when token present (your token is now configured in main.dart).
+    // Local collection is still blended in the UI layer for immediate results.
     if (token == null || token!.isEmpty) {
       return _searchDemo(query, limit: limit);
     }
@@ -207,7 +206,7 @@ class BggService {
   }
 
   Future<Game?> getGameDetails(String id) async {
-    // TEMPORARY: Use demo data until you provide a real BGG token
+    // Live BGG details (demo fallback only if no token)
     if (token == null || token!.isEmpty) {
       return _getDemoGame(id);
     }
@@ -297,12 +296,10 @@ class BggService {
     );
   }
 
-  // Live BGG data when token provided.
-  // Demo data (above) used as temporary placeholder until token is obtained.
+  // Live BGG data (token configured). Demo data only as fallback if token removed.
 
   Future<List<Game>> fetchUserCollection(String username) async {
     if (token == null || token!.isEmpty) {
-      // For now return empty until token is provided
       return [];
     }
 

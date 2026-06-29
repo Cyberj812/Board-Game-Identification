@@ -43,6 +43,7 @@ dependencies:
   pdfx: ^2.1.0
   open_filex: ^4.4.0
   qr_flutter: ^4.1.0  # for generating shareable QR codes for friend collection merge
+  network_info_plus: ^4.1.0  # to get local IP when hosting score sessions
   # Note: You can choose to open rulebooks with Google PDF Viewer (or any installed viewer)
   # via the "Open externally" button. pdfx provides optional in-app viewing.
 

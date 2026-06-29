@@ -32,7 +32,7 @@ Follow instructions for Xcode (iOS) and/or Android Studio.
 The easiest way:
 
 1. Go to https://github.com/Cyberj812/Board-Game-Identification/actions
-2. Open the latest "Build Android APK" run
+2. Open the latest "Build Mobile Apps (Android + iOS)" run
 3. Download the **board-game-snap-debug** artifact
 
 This gives you the latest `app-debug.apk` with all current features.
@@ -52,9 +52,12 @@ flutter build apk --debug
 # or --release
 ```
 
-### 4. (Recommended) Add BGG Token for best data
+### 4. BGG Token (now integrated)
 
-In the app (future Settings screen) or we can add secure storage for a personal BGG API token from https://boardgamegeek.com/applications
+Your personal BGG token has been added to the code (`BggService(token: '...')` in main.dart).
+This unlocks full live search, game details, and collection import from your BGG account.
+
+(For production you'd typically move this to secure storage / env, but for personal use hardcoding is fine.)
 
 ## Project Structure
 
@@ -76,7 +79,7 @@ mobile/
 
 ## Roadmap / Next Steps
 
-- [ ] Secure storage + settings for BGG token
+- [x] BGG token integrated (hardcoded for now; live API enabled)
 - [ ] Local history of scanned games
 - [ ] Better OCR title extraction heuristics
 - [ ] On-device image embeddings / better vision identification

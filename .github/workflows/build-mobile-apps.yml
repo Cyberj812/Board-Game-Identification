@@ -1,0 +1,130 @@
+name: Build Mobile Apps (Android + iOS)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    env:
+      ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Cache Flutter dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.pub-cache
+            mobile/.dart_tool
+          key: ${{ runner.os }}-flutter-${{ hashFiles('mobile/pubspec.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-flutter-
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('mobile/android/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: mobile
+
+      - name: Build debug APK
+        run: |
+          flutter config --enable-android
+          flutter build apk --debug --android-skip-build-dependency-validation
+        working-directory: mobile
+
+      - name: Upload Android APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-game-snap-android-debug
+          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+
+      - name: Create Android Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: v${{ github.run_number }}-debug
+          name: BoardGameSnap Android Debug (build ${{ github.run_number }})
+          draft: false
+          prerelease: true
+          files: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  build-ios:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Get Flutter dependencies
+        run: flutter pub get
+        working-directory: mobile
+
+      - name: Build iOS (release, no codesign)
+        run: |
+          flutter config --enable-ios
+          flutter build ios --release --no-codesign
+        working-directory: mobile
+
+      - name: Package iOS app as IPA (unsigned / simulator-friendly)
+        working-directory: mobile
+        run: |
+          cd build/ios/iphoneos
+          mkdir -p Payload
+          cp -R Runner.app Payload/
+          zip -r -y ../../../board-game-snap-ios-unsigned.ipa Payload
+          # Also zip the .app for easy Simulator use
+          cd ..
+          zip -r -y ../../board-game-snap-ios-simulator.app.zip iphoneos/Runner.app
+        shell: bash
+
+      - name: Upload iOS artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: board-game-snap-ios
+          path: |
+            mobile/board-game-snap-ios-unsigned.ipa
+            mobile/board-game-snap-ios-simulator.app.zip
+
+      - name: Create iOS Release
+        uses: softprops/action-gh-release@v2
+        if: github.event_name == 'workflow_dispatch'
+        with:
+          tag_name: v${{ github.run_number }}-ios
+          name: BoardGameSnap iOS (unsigned IPA, build ${{ github.run_number }})
+          draft: false
+          prerelease: true
+          files: mobile/board-game-snap-ios.ipa
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
