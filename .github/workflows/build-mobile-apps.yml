@@ -61,7 +61,9 @@ jobs:
       - name: Build debug APK
         run: |
           flutter config --enable-android
-          flutter build apk --debug --stacktrace
+          flutter build apk --debug --stacktrace \
+            --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} \
+            --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }}
         working-directory: mobile
 
       - name: List build output
@@ -132,7 +134,9 @@ jobs:
       - name: Build iOS (release, no codesign)
         run: |
           flutter config --enable-ios
-          flutter build ios --release --no-codesign
+          flutter build ios --release --no-codesign \
+            --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} \
+            --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }}
         working-directory: mobile
 
       - name: Package iOS app as IPA (unsigned)

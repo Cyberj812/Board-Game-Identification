@@ -54,11 +54,13 @@ flutter build apk --debug
 
 ### 4. BGG Token (now integrated)
 
-Your personal BGG token has been added to the code (see bggToken const in main.dart).
-This unlocks full live search, game details, and collection import from your BGG account.
+BGG token and username are configured via --dart-define at build time (see bggToken / bggUsername in main.dart).
 
-Note: token is passed as query param (?token=...) for BGG XML API compatibility.
-Update bggUsername if needed.
+To build with your token:
+flutter build apk --debug --dart-define=BGG_TOKEN=5591ebec-2659-4aaf-91fb-4287832a1e75 --dart-define=BGG_USERNAME=cyberjunkie812
+
+Token is passed as ?token=... (and Bearer header) for BGG XML API.
+Update the username if different for your token.
 
 ## Project Structure
 
