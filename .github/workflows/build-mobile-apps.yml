@@ -103,6 +103,7 @@ jobs:
 
       - name: Build debug APK
         run: |
+          set -o pipefail
           flutter config --enable-android
           # Extra gradle clean + refresh to force re-resolution after cache purges / shims
           # Use direct path to gradlew (cwd is 'mobile') and ensure executable
@@ -142,7 +143,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: board-game-snap-android-debug
-          path: mobile/build/app/outputs/flutter-apk/app-debug.apk
+          path: mobile/build/app/outputs/flutter-apk/*.apk
+          if-no-files-found: error
 
       - name: Create Android Release
         uses: softprops/action-gh-release@v2
