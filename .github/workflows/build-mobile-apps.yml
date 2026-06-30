@@ -40,11 +40,6 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-gradle-
 
-      - name: Setup Gradle
-        uses: gradle/gradle-build-action@v3
-        with:
-          gradle-version: wrapper
-
       - name: Setup Flutter
         uses: subosito/flutter-action@v2
         with:
@@ -105,17 +100,9 @@ jobs:
         run: |
           set -o pipefail
           flutter config --enable-android
-          # Extra gradle clean + refresh to force re-resolution after cache purges / shims
-          # Use direct path to gradlew (cwd is 'mobile') and ensure executable
-          chmod +x ./android/gradlew || true
-          ./android/gradlew clean --no-daemon --refresh-dependencies --stacktrace 2>&1 | tee gradle_clean.log || true
-          echo "=== Gradle clean output (last 50 lines) ==="
-          tail -50 gradle_clean.log || true
           flutter --verbose build apk --debug --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} 2>&1 | tee flutter_build.log || {
             echo "=== FLUTTER BUILD FULL OUTPUT ==="
             cat flutter_build.log || true
-            echo "=== Gradle clean output (last 100 lines) ==="
-            tail -100 gradle_clean.log || true
             echo "=== Current dir and key paths ==="
             pwd
             ls -la build/ 2>/dev/null | head -20 || echo "no build/ at top"
