@@ -100,7 +100,7 @@ jobs:
         run: |
           set -o pipefail
           flutter config --enable-android
-          flutter --verbose build apk --debug --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} 2>&1 | tee flutter_build.log || {
+          flutter --verbose build apk --debug --dart-define="BGG_TOKEN=${{ secrets.BGG_TOKEN }}" --dart-define="BGG_USERNAME=${{ secrets.BGG_USERNAME }}" 2>&1 | tee flutter_build.log || {
             echo "=== FLUTTER BUILD FULL OUTPUT ==="
             cat flutter_build.log || true
             echo "=== Current dir and key paths ==="
@@ -189,7 +189,13 @@ jobs:
         working-directory: mobile
 
       - name: Build iOS (release, no codesign)
-        run: flutter config --enable-ios && flutter build ios --release --no-codesign --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }}
+        run: |
+          flutter config --enable-ios && flutter build ios --release --no-codesign --dart-define="BGG_TOKEN=${{ secrets.BGG_TOKEN }}" --dart-define="BGG_USERNAME=${{ secrets.BGG_USERNAME }}" 2>&1 | tee ios_build.log || {
+            echo "=== IOS BUILD FULL OUTPUT ==="
+            cat ios_build.log || true
+            echo "----- END LOGS -----"
+            exit 1
+          }
         working-directory: mobile
 
       - name: Package iOS app as IPA (unsigned)
