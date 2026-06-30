@@ -99,9 +99,17 @@ jobs:
         run: |
           set -o pipefail
           flutter config --enable-android
+          chmod +x ./android/gradlew || true
+          ./android/gradlew clean --no-daemon 2>&1 | tee gradle_clean.log || true
+          echo "=== Gradle clean output (last 30 lines) ==="
+          tail -30 gradle_clean.log || true
+          echo "=== Trying to show resolved AGP ==="
+          ./android/gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match or gradle resolution skipped/failed at this stage)"
           flutter --verbose build apk --debug --dart-define="BGG_TOKEN=${{ secrets.BGG_TOKEN }}" --dart-define="BGG_USERNAME=${{ secrets.BGG_USERNAME }}" 2>&1 | tee flutter_build.log || {
             echo "=== FLUTTER BUILD FULL OUTPUT ==="
             cat flutter_build.log || true
+            echo "=== Gradle clean output (last 100 lines) ==="
+            tail -100 gradle_clean.log || true
             echo "=== local.properties ==="
             cat android/local.properties || true
             echo "=== Current dir and key paths ==="
