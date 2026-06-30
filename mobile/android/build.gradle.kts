@@ -21,13 +21,15 @@ subprojects {
 
 // Workaround for plugins that don't declare 'namespace' (required by AGP 8+).
 // This forces a namespace on library subprojects (like flutter_secure_storage) that use
-// conditional namespace setting. Must be in KTS compatible form.
+// conditional namespace setting. Using simple dynamic access for compatibility.
 subprojects {
-    afterEvaluate {
-        if (this.hasProperty("android")) {
-            val androidExt = this.extensions.findByName("android")
-            if (androidExt is com.android.build.gradle.BaseExtension && androidExt.namespace == null) {
-                androidExt.namespace = "com.cyberj812.boardgamesnap.${this.name.replace(":", ".")}"
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android {
+                @Suppress("DEPRECATION")
+                if (namespace == null) {
+                    namespace = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
+                }
             }
         }
     }

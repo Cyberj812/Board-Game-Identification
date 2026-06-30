@@ -70,7 +70,6 @@ jobs:
           # Ensure local.properties exists with flutter.sdk for direct gradle calls and settings.gradle.kts
           FLUTTER_SDK=$(dirname $(dirname $(which flutter)))
           echo "flutter.sdk=$FLUTTER_SDK" > android/local.properties
-          echo "sdk.dir=$ANDROID_HOME" >> android/local.properties || true
           cat android/local.properties
         working-directory: mobile
 
