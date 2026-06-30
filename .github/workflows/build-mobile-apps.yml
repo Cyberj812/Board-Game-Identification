@@ -92,7 +92,6 @@ jobs:
           ./android/gradlew --version --no-daemon --quiet || true
           echo "=== Declared AGP in settings.gradle.kts ==="
           grep -o 'com.android.application.*version "[^"]*"' android/settings.gradle.kts || echo "no match"
-          echo "=== Note: full project resolution moved to avoid early Gradle config failures ==="
         working-directory: mobile
         if: always()
 
