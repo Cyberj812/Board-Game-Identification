@@ -78,6 +78,9 @@ jobs:
 
       - name: Debug resolved Gradle / AGP (for build failure diagnosis)
         run: |
+          echo "=== Checking gradlew location (cwd should be mobile) ==="
+          pwd
+          ls -l ./android/gradlew || echo "gradlew MISSING at ./android/gradlew"
           echo "=== Gradle wrapper version ==="
           chmod +x ./android/gradlew || true
           ./android/gradlew --version --no-daemon --quiet || true
@@ -93,11 +96,16 @@ jobs:
           # Use direct path to gradlew (cwd is 'mobile') and ensure executable
           chmod +x ./android/gradlew || true
           ./android/gradlew clean --no-daemon --refresh-dependencies || true
-          flutter build apk --debug --verbose --no-daemon --no-build-cache --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
+          flutter --verbose build apk --debug --no-daemon --no-build-cache --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
             echo "=== BUILD FAILED - DUMPING RECENT GRADLE/FLUTTER LOGS ==="
-            find . -type f \( -name "*.log" -o -name "build.log" \) -path "*/build/*" -o -path "*/.gradle/*" | head -10 | while read log; do
+            echo "=== Current dir and key paths ==="
+            pwd
+            ls -la build/ 2>/dev/null | head -20 || echo "no build/ at top"
+            ls -la android/build/ 2>/dev/null | head -10 || echo "no android/build/"
+            echo "=== Searching for log files ==="
+            find . \( -path '*/build/*' -o -path '*/.gradle/*' \) -type f \( -name '*.log' -o -name 'build.log' -o -name '*daemon*.log' \) 2>/dev/null | head -20 | while read log; do
               echo "----- $log -----"
-              tail -200 "$log" || true
+              tail -150 "$log" || true
             done
             echo "----- END LOGS -----"
             exit 1
