@@ -103,6 +103,8 @@ jobs:
           flutter --verbose build apk --debug --dart-define="BGG_TOKEN=${{ secrets.BGG_TOKEN }}" --dart-define="BGG_USERNAME=${{ secrets.BGG_USERNAME }}" 2>&1 | tee flutter_build.log || {
             echo "=== FLUTTER BUILD FULL OUTPUT ==="
             cat flutter_build.log || true
+            echo "=== local.properties ==="
+            cat android/local.properties || true
             echo "=== Current dir and key paths ==="
             pwd
             ls -la build/ 2>/dev/null | head -20 || echo "no build/ at top"
