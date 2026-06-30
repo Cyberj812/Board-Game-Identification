@@ -21,15 +21,19 @@ subprojects {
 
 // Workaround for plugins that don't declare 'namespace' (required by AGP 8+).
 // This forces a namespace on library subprojects (like flutter_secure_storage) that use
-// conditional namespace setting. Using simple dynamic access for compatibility.
+// conditional namespace setting. Wrapped to avoid config errors.
 subprojects {
-    afterEvaluate { project ->
-        if (project.hasProperty("android")) {
-            project.android {
-                @Suppress("DEPRECATION")
-                if (namespace == null) {
-                    namespace = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
+    afterEvaluate { p ->
+        if (p.hasProperty("android")) {
+            try {
+                p.android {
+                    @Suppress("DEPRECATION")
+                    if (namespace == null) {
+                        namespace = "com.cyberj812.boardgamesnap.${p.name.replace(":", ".")}"
+                    }
                 }
+            } catch (_: Exception) {
+                // ignore if android block not ready or already set
             }
         }
     }

@@ -83,6 +83,8 @@ jobs:
           rm -rf ~/.gradle/caches/modules-2/metadata-* || true
           rm -rf ~/.gradle/caches/transforms-* || true
           rm -rf ~/.gradle/caches/build-cache-* || true
+          rm -rf ~/.gradle/caches/8.*/ || true
+          rm -rf ~/.gradle/daemon/* || true
         working-directory: mobile
 
       - name: Debug resolved Gradle / AGP (for build failure diagnosis)
@@ -93,6 +95,8 @@ jobs:
           echo "=== Gradle wrapper version ==="
           chmod +x ./android/gradlew || true
           ./android/gradlew --version --no-daemon --quiet || true
+          echo "=== Declared AGP in settings.gradle.kts ==="
+          grep -o 'com.android.application.*version "[^"]*"' android/settings.gradle.kts || echo "no match"
           echo "=== Attempting to show resolved AGP for app ==="
           ./android/gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match or gradle resolution skipped/failed at this stage)"
         working-directory: mobile
@@ -105,7 +109,10 @@ jobs:
           # Use direct path to gradlew (cwd is 'mobile') and ensure executable
           chmod +x ./android/gradlew || true
           ./android/gradlew clean --no-daemon --refresh-dependencies || true
-          flutter --verbose build apk --debug --no-daemon --no-build-cache --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
+          # Print resolved AGP right before build for accurate diagnosis (Flutter may influence resolution)
+          echo "=== Resolved AGP just before flutter build ==="
+          ./android/gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match)"
+          flutter --verbose build apk --debug --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
             echo "=== BUILD FAILED - DUMPING RECENT GRADLE/FLUTTER LOGS ==="
             echo "=== Current dir and key paths ==="
             pwd
