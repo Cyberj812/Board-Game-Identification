@@ -97,8 +97,8 @@ jobs:
           ./android/gradlew --version --no-daemon --quiet || true
           echo "=== Declared AGP in settings.gradle.kts ==="
           grep -o 'com.android.application.*version "[^"]*"' android/settings.gradle.kts || echo "no match"
-          echo "=== Attempting to show resolved AGP for app ==="
-          ./android/gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match or gradle resolution skipped/failed at this stage)"
+          echo "=== Attempting to show resolved AGP for app (with stacktrace on error) ==="
+          ./android/gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon --stacktrace 2>&1 | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match or gradle resolution skipped/failed at this stage)"
         working-directory: mobile
         if: always()
 
@@ -108,11 +108,29 @@ jobs:
           # Extra gradle clean + refresh to force re-resolution after cache purges / shims
           # Use direct path to gradlew (cwd is 'mobile') and ensure executable
           chmod +x ./android/gradlew || true
-          ./android/gradlew clean --no-daemon --refresh-dependencies || true
+          ./android/gradlew clean --no-daemon --refresh-dependencies --stacktrace 2>&1 | tee gradle_clean.log || true
+          echo "=== Gradle clean output (last 50 lines) ==="
+          tail -50 gradle_clean.log || true
           # Print resolved AGP right before build for accurate diagnosis (Flutter may influence resolution)
           echo "=== Resolved AGP just before flutter build ==="
           ./android/gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match)"
-          flutter --verbose build apk --debug --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} || {
+          flutter --verbose build apk --debug --dart-define=BGG_TOKEN=${{ secrets.BGG_TOKEN }} --dart-define=BGG_USERNAME=${{ secrets.BGG_USERNAME }} 2>&1 | tee flutter_build.log || {
+            echo "=== FLUTTER BUILD FULL OUTPUT ==="
+            cat flutter_build.log || true
+            echo "=== Gradle clean output (last 100 lines) ==="
+            tail -100 gradle_clean.log || true
+            echo "=== Current dir and key paths ==="
+            pwd
+            ls -la build/ 2>/dev/null | head -20 || echo "no build/ at top"
+            ls -la android/build/ 2>/dev/null | head -10 || echo "no android/build/"
+            echo "=== Searching for log files ==="
+            find . \( -path '*/build/*' -o -path '*/.gradle/*' \) -type f \( -name '*.log' -o -name 'build.log' -o -name '*daemon*.log' \) 2>/dev/null | head -20 | while read log; do
+              echo "----- $log -----"
+              tail -150 "$log" || true
+            done
+            echo "----- END LOGS -----"
+            exit 1
+          }
             echo "=== BUILD FAILED - DUMPING RECENT GRADLE/FLUTTER LOGS ==="
             echo "=== Current dir and key paths ==="
             pwd
