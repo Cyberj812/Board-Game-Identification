@@ -100,7 +100,7 @@ jobs:
           set -o pipefail
           flutter config --enable-android
           chmod +x ./android/gradlew || true
-          ./android/gradlew clean --no-daemon 2>&1 | tee gradle_clean.log || true
+          ./android/gradlew clean --no-daemon --refresh-dependencies 2>&1 | tee gradle_clean.log || true
           echo "=== Gradle clean output (last 30 lines) ==="
           tail -30 gradle_clean.log || true
           echo "=== Trying to show resolved AGP ==="
