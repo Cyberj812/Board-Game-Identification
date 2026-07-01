@@ -54,13 +54,15 @@ jobs:
       - name: Patch plugin compileSdk to 35 (androidx aarMetadata fix for network_info_plus, pdfx etc.)
         run: |
           set -x
-          # Groovy .gradle plugins from pub.dev
-          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/^\s*compileSdk\s\+.*/compileSdk 35/' {} + || true
-          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/^\s*compileSdkVersion\s\+.*/compileSdkVersion 35/' {} + || true
-          # .kts variants if present
-          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/compileSdk\s*=.*/compileSdk = 35/' {} + || true
-          echo "=== Patched compileSdk samples ==="
-          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' | head -3 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
+          # Groovy: replace common forms
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/^\(\s*compileSdk\s*\).*/\135/' {} + || true
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/^\(\s*compileSdkVersion\s*\).*/\135/' {} + || true
+          # KTS
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/\(compileSdk\s*=\).*/\1 35/' {} + || true
+          echo "=== Patched samples (network_info_plus focus) ==="
+          find . -path '*network_info_plus*/android/build.gradle' -o -path '*network_info_plus*/android/build.gradle.kts' | head -2 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
+          echo "=== General samples ==="
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' | head -2 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
         working-directory: mobile
 
       - name: Flutter doctor
