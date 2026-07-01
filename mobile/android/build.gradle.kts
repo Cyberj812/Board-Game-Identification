@@ -17,25 +17,33 @@ subprojects {
 
     project.evaluationDependsOn(":app")
 
-    // Workaround for plugins that don't declare 'namespace' (required by AGP 8+).
-    // Registered early in the same subprojects configure pass to avoid
-    // "Cannot run Project.afterEvaluate when the project is already evaluated."
-    // Uses receiver methods + reflection to keep KTS compilation happy.
-    afterEvaluate {
-        if (hasProperty("android")) {
-            val androidExt = extensions.findByName("android")
-            if (androidExt != null) {
-                try {
-                    val getNamespace = androidExt.javaClass.getMethod("getNamespace")
-                    val setNamespace = androidExt.javaClass.getMethod("setNamespace", String::class.java)
-                    if (getNamespace.invoke(androidExt) == null) {
-                        val ns = "com.cyberj812.boardgamesnap.${name.replace(":", ".")}"
-                        setNamespace.invoke(androidExt, ns)
-                    }
-                } catch (_: Exception) {
-                    // best effort
+    // Namespace shim for AGP 8+: use plugins.withId so the action runs
+    // exactly when the Android plugin is applied (avoids afterEvaluate timing/"already evaluated" errors).
+    // Reflection used to avoid static type resolution issues in KTS.
+    plugins.withId("com.android.library") {
+        val androidExt = extensions.findByName("android")
+        if (androidExt != null) {
+            try {
+                val getNamespace = androidExt.javaClass.getMethod("getNamespace")
+                val setNamespace = androidExt.javaClass.getMethod("setNamespace", String::class.java)
+                if (getNamespace.invoke(androidExt) == null) {
+                    val ns = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
+                    setNamespace.invoke(androidExt, ns)
                 }
-            }
+            } catch (_: Exception) {}
+        }
+    }
+    plugins.withId("com.android.application") {
+        val androidExt = extensions.findByName("android")
+        if (androidExt != null) {
+            try {
+                val getNamespace = androidExt.javaClass.getMethod("getNamespace")
+                val setNamespace = androidExt.javaClass.getMethod("setNamespace", String::class.java)
+                if (getNamespace.invoke(androidExt) == null) {
+                    val ns = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
+                    setNamespace.invoke(androidExt, ns)
+                }
+            } catch (_: Exception) {}
         }
     }
 }
