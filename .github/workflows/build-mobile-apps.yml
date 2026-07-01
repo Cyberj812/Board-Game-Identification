@@ -51,6 +51,18 @@ jobs:
         run: flutter pub get
         working-directory: mobile
 
+      - name: Patch plugin compileSdk to 35 (androidx aarMetadata fix for network_info_plus, pdfx etc.)
+        run: |
+          set -x
+          # Groovy .gradle plugins from pub.dev
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/^\s*compileSdk\s\+.*/compileSdk 35/' {} + || true
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/^\s*compileSdkVersion\s\+.*/compileSdkVersion 35/' {} + || true
+          # .kts variants if present
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/compileSdk\s*=.*/compileSdk = 35/' {} + || true
+          echo "=== Patched compileSdk samples ==="
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' | head -3 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
+        working-directory: mobile
+
       - name: Flutter doctor
         run: flutter doctor -v
         working-directory: mobile
