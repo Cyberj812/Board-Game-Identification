@@ -23,12 +23,12 @@ subprojects {
 // This forces a namespace on library subprojects (like flutter_secure_storage) that use
 // conditional namespace setting.
 subprojects {
-    afterEvaluate { p: org.gradle.api.Project ->
-        if (p.hasProperty("android")) {
-            p.android {
+    afterEvaluate {
+        if (it.hasProperty("android")) {
+            it.android {
                 @Suppress("DEPRECATION")
                 if (namespace == null) {
-                    namespace = "com.cyberj812.boardgamesnap.${p.name.replace(":", ".")}"
+                    namespace = "com.cyberj812.boardgamesnap.${it.name.replace(":", ".")}"
                 }
             }
         }
