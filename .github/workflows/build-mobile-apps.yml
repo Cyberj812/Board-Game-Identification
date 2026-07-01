@@ -89,7 +89,7 @@ jobs:
           ls -l ./android/gradlew || echo "gradlew MISSING at ./android/gradlew"
           echo "=== Gradle wrapper version ==="
           chmod +x ./android/gradlew || true
-          ./android/gradlew --version --no-daemon --quiet || true
+          (cd android && ./gradlew --version --no-daemon --quiet || true)
           echo "=== Declared AGP in settings.gradle.kts ==="
           grep -o 'com.android.application.*version "[^"]*"' android/settings.gradle.kts || echo "no match"
         working-directory: mobile
@@ -100,11 +100,11 @@ jobs:
           set -o pipefail
           flutter config --enable-android
           chmod +x ./android/gradlew || true
-          ./android/gradlew clean --no-daemon --refresh-dependencies 2>&1 | tee gradle_clean.log || true
+          (cd android && ./gradlew clean --no-daemon --refresh-dependencies 2>&1 | tee ../gradle_clean.log || true)
           echo "=== Gradle clean output (last 30 lines) ==="
           tail -30 gradle_clean.log || true
           echo "=== Trying to show resolved AGP ==="
-          ./android/gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match or gradle resolution skipped/failed at this stage)"
+          (cd android && ./gradlew -q :app:dependencies --configuration debugRuntimeClasspath --no-daemon 2>/dev/null | grep -i 'com.android.tools.build:gradle' | head -5 || echo "(no match or gradle resolution skipped/failed at this stage)")
           flutter --verbose build apk --debug --dart-define="BGG_TOKEN=${{ secrets.BGG_TOKEN }}" --dart-define="BGG_USERNAME=${{ secrets.BGG_USERNAME }}" 2>&1 | tee flutter_build.log || {
             echo "=== FLUTTER BUILD FULL OUTPUT ==="
             cat flutter_build.log || true
