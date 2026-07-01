@@ -19,6 +19,22 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
+// Workaround for plugins that don't declare 'namespace' (required by AGP 8+).
+// This forces a namespace on library subprojects (like flutter_secure_storage) that use
+// conditional namespace setting.
+subprojects {
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android {
+                @Suppress("DEPRECATION")
+                if (namespace == null) {
+                    namespace = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
+                }
+            }
+        }
+    }
+}
+
 tasks.register<Delete>("clean") {
     delete(rootProject.layout.buildDirectory)
 }

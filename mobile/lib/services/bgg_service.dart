@@ -98,23 +98,6 @@ class BggService {
     ),
   ];
 
-  List<Game> _searchDemo(String query, {int limit = 10}) {
-    final q = query.toLowerCase().trim();
-    if (q.isEmpty) return _demoGames.take(limit).toList();
-    return _demoGames
-        .where((g) => g.name.toLowerCase().contains(q))
-        .take(limit)
-        .toList();
-  }
-
-  Game? _getDemoGame(String id) {
-    try {
-      return _demoGames.firstWhere((g) => g.id == id);
-    } catch (_) {
-      return null;
-    }
-  }
-
   Map<String, String> get _headers {
     final h = {
       'User-Agent': 'BoardGameSnap/1.0 (Flutter App)',

@@ -1,8 +1,7 @@
-gradle-wrapper.jar
+# Do not ignore the Gradle wrapper scripts/jar - they must be committed so CI can run builds
+# /.gradle is correctly ignored below
 /.gradle
 /captures/
-/gradlew
-/gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 .cxx/
