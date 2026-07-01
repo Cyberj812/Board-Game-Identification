@@ -54,15 +54,18 @@ jobs:
       - name: Patch plugin compileSdk to 35 (androidx aarMetadata fix for network_info_plus, pdfx etc.)
         run: |
           set -x
-          # Groovy: replace common forms
+          # Make compileSdk hard-coded 35 in all plugin android build files.
+          # Handle flutter. references and common declarations.
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/flutter\.compileSdkVersion/35/g' {} + || true
           find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/^\(\s*compileSdk\s*\).*/\135/' {} + || true
           find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/^\(\s*compileSdkVersion\s*\).*/\135/' {} + || true
           # KTS
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/flutter\.compileSdkVersion/35/g' {} + || true
           find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/\(compileSdk\s*=\).*/\1 35/' {} + || true
           echo "=== Patched samples (network_info_plus focus) ==="
-          find . -path '*network_info_plus*/android/build.gradle' -o -path '*network_info_plus*/android/build.gradle.kts' | head -2 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
+          find . -path '*network_info_plus*/android/build.gradle' -o -path '*network_info_plus*/android/build.gradle.kts' 2>/dev/null | head -3 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
           echo "=== General samples ==="
-          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' | head -2 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
+          find . -path '*/.pub-cache/hosted/pub.dev/*/android/build.gradle' 2>/dev/null | head -2 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
         working-directory: mobile
 
       - name: Flutter doctor
