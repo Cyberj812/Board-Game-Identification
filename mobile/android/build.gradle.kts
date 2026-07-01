@@ -25,10 +25,10 @@ subprojects {
         if (ext != null) {
             try {
                 // compileSdk - try several common setters
-                try { ext.javaClass.getMethod("setCompileSdkVersion", Int::class.java).invoke(ext, 35) } catch (_: Exception) {}
-                try { ext.javaClass.getMethod("compileSdkVersion", Int::class.java).invoke(ext, 35) } catch (_: Exception) {}
-                try { ext.javaClass.getMethod("setCompileSdk", Int::class.java).invoke(ext, 35) } catch (_: Exception) {}
-                try { ext.javaClass.getMethod("setCompileSdk", String::class.java).invoke(ext, "35") } catch (_: Exception) {}
+                try { ext.javaClass.getMethod("setCompileSdkVersion", Int::class.java).invoke(ext, 36) } catch (_: Exception) {}
+                try { ext.javaClass.getMethod("compileSdkVersion", Int::class.java).invoke(ext, 36) } catch (_: Exception) {}
+                try { ext.javaClass.getMethod("setCompileSdk", Int::class.java).invoke(ext, 36) } catch (_: Exception) {}
+                try { ext.javaClass.getMethod("setCompileSdk", String::class.java).invoke(ext, "36") } catch (_: Exception) {}
                 // namespace
                 try {
                     val ns = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
@@ -44,10 +44,10 @@ subprojects {
         val ext = project.extensions.findByName("android")
         if (ext != null) {
             try {
-                try { ext.javaClass.getMethod("setCompileSdkVersion", Int::class.java).invoke(ext, 35) } catch (_: Exception) {}
-                try { ext.javaClass.getMethod("compileSdkVersion", Int::class.java).invoke(ext, 35) } catch (_: Exception) {}
-                try { ext.javaClass.getMethod("setCompileSdk", Int::class.java).invoke(ext, 35) } catch (_: Exception) {}
-                try { ext.javaClass.getMethod("setCompileSdk", String::class.java).invoke(ext, "35") } catch (_: Exception) {}
+                try { ext.javaClass.getMethod("setCompileSdkVersion", Int::class.java).invoke(ext, 36) } catch (_: Exception) {}
+                try { ext.javaClass.getMethod("compileSdkVersion", Int::class.java).invoke(ext, 36) } catch (_: Exception) {}
+                try { ext.javaClass.getMethod("setCompileSdk", Int::class.java).invoke(ext, 36) } catch (_: Exception) {}
+                try { ext.javaClass.getMethod("setCompileSdk", String::class.java).invoke(ext, "36") } catch (_: Exception) {}
                 try {
                     val ns = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
                     val cur = ext.javaClass.getMethod("getNamespace").invoke(ext)
