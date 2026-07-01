@@ -376,6 +376,30 @@ class _HomePageState extends State<HomePage> {
         _minRatingFilter != null;
   }
 
+  // Simple color distance for box photo matching (photo search by color accuracy)
+  Game? _findClosestColorInCollection(int photoColor) {
+    if (_myCollection.isEmpty) return null;
+    int bestD = 1 << 30;
+    Game? best;
+    for (final g in _myCollection) {
+      if (g.boxColor == null) continue;
+      final d = _colorDist(photoColor, g.boxColor!);
+      if (d < bestD) {
+        bestD = d;
+        best = g;
+      }
+    }
+    // Only return if reasonably close (tuned threshold)
+    return (bestD < 18000) ? best : null;
+  }
+
+  int _colorDist(int c1, int c2) {
+    final r1 = ((c1 >> 16) & 0xFF), g1 = ((c1 >> 8) & 0xFF), b1 = (c1 & 0xFF);
+    final r2 = ((c2 >> 16) & 0xFF), g2 = ((c2 >> 8) & 0xFF), b2 = (c2 & 0xFF);
+    final dr = r1 - r2, dg = g1 - g2, db = b1 - b2;
+    return dr * dr + dg * dg + db * db;
+  }
+
   Widget _buildActiveFilterSummary() {
     if (!_hasAnyFilter()) {
       return const Text('No filters', style: TextStyle(fontSize: 12, color: Colors.grey));
@@ -717,6 +741,7 @@ class _HomePageState extends State<HomePage> {
                           if (g.year.isNotEmpty) g.year,
                           if (g.minPlayers > 0 || g.maxPlayers > 0) g.playerCount + 'p',
                           if (g.weight != null) 'wt ${g.weight!.toStringAsFixed(1)}',
+                          if (g.bestWithText.isNotEmpty) g.bestWithText,
                         ].join(' · ')),
                         trailing: const Icon(Icons.chevron_right),
                         onTap: () => Navigator.pop(ctx, g),
@@ -765,6 +790,7 @@ class _HomePageState extends State<HomePage> {
     try {
       final file = File(image.path);
       final text = await _ocr.extractText(file);
+      final photoBoxColor = await _ocr.extractDominantColorInt(file); // for visual/color-based lookup later
 
       if (text.trim().isEmpty) {
         if (_hasAnyFilter()) {
@@ -829,10 +855,19 @@ class _HomePageState extends State<HomePage> {
 
       if (finalCandidates.isEmpty) {
         // No candidates from live BGG search (or none survived your filters).
+        // Fallback: try color-based match against your collection (photo of box color accuracy)
+        final colorMatch = _findClosestColorInCollection(photoBoxColor);
+        if (colorMatch != null && mounted) {
+          final full = await _bgg.getGameDetails(colorMatch.id) ?? colorMatch;
+          if (mounted) {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => GameDetailPage(game: full)));
+          }
+          return;
+        }
         if (mounted) {
           final note = _hasAnyFilter() ? ' (no matches under your filters)' : '';
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('No matching games found$note. OCR got: "$cleaned".')),
+            SnackBar(content: Text('No matching games found$note. OCR got: "$cleaned". Tried color match too.')),
           );
         }
         setState(() {
@@ -848,6 +883,7 @@ class _HomePageState extends State<HomePage> {
       if (chosen != null && mounted) {
         final fullGame = await _bgg.getGameDetails(chosen.id);
         if (fullGame != null && mounted) {
+          fullGame.boxColor ??= photoBoxColor; // attach color signature from this photo (used for future visual matches)
           // Do NOT auto add. User decides in the detail view.
           Navigator.push(
             context,
@@ -1372,9 +1408,24 @@ class _HomePageState extends State<HomePage> {
                                       final g = filtered[i];
                                       return Card(
                                         child: ListTile(
-                                          leading: const Icon(Icons.casino, size: 28),
+                                          leading: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              const Icon(Icons.casino, size: 28),
+                                              if (g.boxColor != null)
+                                                Container(
+                                                  width: 16, height: 16,
+                                                  margin: const EdgeInsets.only(left: 4),
+                                                  decoration: BoxDecoration(
+                                                    color: Color(g.boxColor!),
+                                                    border: Border.all(color: Colors.black26),
+                                                    borderRadius: BorderRadius.circular(3),
+                                                  ),
+                                                ),
+                                            ],
+                                          ),
                                           title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                          subtitle: Text('${g.year} • ${g.playerCount} players • ${g.weightString}'),
+                                          subtitle: Text('${g.year} • ${g.playerCount} players • ${g.weightString}${g.bestWithText.isNotEmpty ? ' • ${g.bestWithText}' : ''}'),
                                           trailing: IconButton(
                                             icon: const Icon(Icons.delete, color: Colors.redAccent),
                                             onPressed: () {
@@ -2042,6 +2093,21 @@ class _HomePageState extends State<HomePage> {
     Game? selectedGame;
     double rotation = 0;
     String wheelSearch = '';
+    int? playerCountFilter; // NEW: when set, ONLY use collection games matching this exact player count
+
+    List<Game> _currentPool() {
+      // Always start from full collection; player filter restricts it (as requested: ONLY collection games matching count)
+      List<Game> pool = _myCollection;
+      if (playerCountFilter != null) {
+        final pc = playerCountFilter!;
+        pool = pool.where((g) {
+          final minp = g.minPlayers;
+          final maxp = g.maxPlayers > 0 ? g.maxPlayers : 99;
+          return pc >= minp && pc <= maxp;
+        }).toList();
+      }
+      return pool;
+    }
 
     showDialog(
       context: context,
@@ -2063,52 +2129,52 @@ class _HomePageState extends State<HomePage> {
                           onChanged: (val) {
                             setDialogState(() {
                               useAll = val;
+                              final pool = _currentPool();
                               if (val) {
-                                selectedGames = List.from(_myCollection);
+                                selectedGames = List.from(pool);
                               } else {
                                 selectedGames = [];
                               }
                             });
                           },
                         ),
-                      if (!useAll && _myCollection.isNotEmpty) ...[
-                        const Text('Select games:'),
-                        const SizedBox(height: 4),
-                        TextField(
-                          decoration: const InputDecoration(
-                            hintText: 'Filter games...',
-                            isDense: true,
-                            border: OutlineInputBorder(),
-                          ),
-                          onChanged: (val) => setDialogState(() => wheelSearch = val.toLowerCase()),
-                        ),
-                        const SizedBox(height: 8),
+                      // NEW: player count filter - restricts to ONLY collection games that support exactly this # players
+                      if (_myCollection.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        const Text('Players (only your collection games that fit):', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
                         Wrap(
-                          spacing: 6,
-                          children: _myCollection
-                              .where((g) => g.name.toLowerCase().contains(wheelSearch))
-                              .map((game) {
-                            final isSelected = selectedGames.contains(game);
-                            return FilterChip(
-                              label: Text(game.name),
-                              selected: isSelected,
-                              onSelected: (sel) {
-                                setDialogState(() {
-                                  if (sel) {
-                                    selectedGames.add(game);
-                                  } else {
-                                    selectedGames.remove(game);
-                                  }
-                                });
-                              },
-                            );
-                          }).toList(),
+                          spacing: 3,
+                          children: [
+                            for (int p = 1; p <= 8; p++)
+                              ChoiceChip(
+                                label: Text(p == 8 ? '8+' : '$p'),
+                                selected: playerCountFilter == p,
+                                onSelected: (sel) {
+                                  setDialogState(() {
+                                    playerCountFilter = sel ? p : null;
+                                    if (useAll) {
+                                      selectedGames = List.from(_currentPool());
+                                    } else {
+                                      // prune selections that no longer match
+                                      final poolIds = _currentPool().map((g) => g.id).toSet();
+                                      selectedGames.removeWhere((g) => !poolIds.contains(g.id));
+                                    }
+                                  });
+                                },
+                              ),
+                            if (playerCountFilter != null)
+                              ActionChip(
+                                label: const Text('Clear'),
+                                onPressed: () => setDialogState(() => playerCountFilter = null),
+                              ),
+                          ],
                         ),
+                        const SizedBox(height: 6),
                       ],
-                      const SizedBox(height: 16),
                       if (selectedGames.isNotEmpty && !isSpinning)
                         ElevatedButton.icon(
                           onPressed: () async {
+                            if (selectedGames.isEmpty) return;
                             setDialogState(() {
                               isSpinning = true;
                               selectedGame = null;
@@ -2137,12 +2203,46 @@ class _HomePageState extends State<HomePage> {
                               await _audioPlayer.play(AssetSource('sounds/fanfare.mp3'));
                             } catch (_) {}
                             _confettiController.play();
-
-                            await Future.delayed(const Duration(seconds: 3));
                           },
                           icon: const Icon(Icons.casino),
                           label: const Text('Spin the Wheel!'),
                         ),
+                      if (!useAll && _myCollection.isNotEmpty) ...[
+                        const Text('Select games:'),
+                        const SizedBox(height: 4),
+                        TextField(
+                          decoration: const InputDecoration(
+                            hintText: 'Filter games...',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          onChanged: (val) => setDialogState(() => wheelSearch = val.toLowerCase()),
+                        ),
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          children: _currentPool()
+                              .where((g) => g.name.toLowerCase().contains(wheelSearch))
+                              .map((game) {
+                            final isSelected = selectedGames.contains(game);
+                            return FilterChip(
+                              label: Text(game.name),
+                              selected: isSelected,
+                              onSelected: (sel) {
+                                setDialogState(() {
+                                  if (sel) {
+                                    if (!selectedGames.any((g) => g.id == game.id)) {
+                                      selectedGames = [...selectedGames, game];
+                                    }
+                                  } else {
+                                    selectedGames = selectedGames.where((g) => g.id != game.id).toList();
+                                  }
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ],
 
                       // Simple group voting (local for now - each person taps +)
                       if (selectedGames.isNotEmpty && !isSpinning) ...[
@@ -2269,7 +2369,7 @@ class _HomePageState extends State<HomePage> {
                   return CheckboxListTile(
                     dense: true,
                     title: Text(g.name),
-                    subtitle: Text('${g.playerCount} players • ${g.playtime} min${expCount > 0 ? ' + $expCount expansions' : ''}'),
+                    subtitle: Text('${g.playerCount} players • ${g.playtime} min${expCount > 0 ? ' + $expCount expansions' : ''}${g.bestWithText.isNotEmpty ? ' • ${g.bestWithText}' : ''}'),
                     value: false,
                     onChanged: (_) {}, // visual only for now
                   );
@@ -4135,6 +4235,11 @@ class GameDetailPage extends StatelessWidget {
               _StatItem(label: 'Time', value: game.playtime.isNotEmpty ? '${game.playtime} min' : '?'),
             ],
           ),
+          if (game.bestWithText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(game.bestWithText, style: const TextStyle(fontWeight: FontWeight.w600, color: Colors.deepPurple)),
+            ),
 
           const SizedBox(height: 16),
 

@@ -17,6 +17,8 @@ class Game {
   final List<DigitalPlatform> digitalPlatforms; // Digital availability
   List<PlayLog> playLogs; // For play logging & stats
   String? houseRules; // Per-game house rules / variant notes for the group
+  int? boxColor; // 0xAARRGGBB dominant box color sampled from photo (for visual/color match search)
+  final List<int> bestPlayerCounts; // community "Best with N players" from BGG polls
 
   Game({
     required this.id,
@@ -37,6 +39,8 @@ class Game {
     this.digitalPlatforms = const [],
     List<PlayLog>? playLogs,
     this.houseRules,
+    this.boxColor,
+    this.bestPlayerCounts = const [],
   }) : playLogs = playLogs ?? [];
 
   void addPlay(PlayLog log) {
@@ -66,6 +70,18 @@ class Game {
   String get rankString => rank != null ? '#$rank' : 'Unranked';
   String get ratingString => rating != null ? rating!.toStringAsFixed(1) : 'Unrated';
 
+  String get bestWithText {
+    if (bestPlayerCounts.isNotEmpty) {
+      final s = bestPlayerCounts.take(3).join(', ');
+      return 'Best with $s player${bestPlayerCounts.length > 1 ? "s" : ""}';
+    }
+    if (minPlayers > 0) {
+      final range = (maxPlayers > 0 && maxPlayers != minPlayers) ? '$minPlayers–$maxPlayers' : '$minPlayers';
+      return 'Best with $range players';
+    }
+    return '';
+  }
+
   factory Game.fromJson(Map<String, dynamic> json) {
     return Game(
       id: json['id'] ?? '',
@@ -92,6 +108,8 @@ class Game {
           .map((p) => PlayLog.fromJson(p))
           .toList(),
       houseRules: json['house_rules'],
+      boxColor: json['box_color'] as int?,
+      bestPlayerCounts: (json['best_player_counts'] as List? ?? []).map((e) => e as int).toList(),
     );
   }
 
@@ -114,6 +132,8 @@ class Game {
         'digital_platforms': digitalPlatforms.map((d) => d.toJson()).toList(),
         'play_logs': playLogs.map((p) => p.toJson()).toList(),
         'house_rules': houseRules,
+        'box_color': boxColor,
+        'best_player_counts': bestPlayerCounts,
       };
 }
 

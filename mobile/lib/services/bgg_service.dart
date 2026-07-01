@@ -262,6 +262,27 @@ class BggService {
       }
     }
 
+    // Parse BGG "suggested_numplayers" poll for "Best" recommendations (community "best with" data)
+    final bestPlayers = <int>[];
+    for (final poll in item.findElements('poll')) {
+      if (poll.getAttribute('name') == 'suggested_numplayers') {
+        for (final results in poll.findElements('results')) {
+          final npStr = results.getAttribute('numplayers') ?? '';
+          final np = int.tryParse(npStr.replaceAll('+', '')); // handle "8+"
+          if (np == null) continue;
+          for (final res in results.findElements('result')) {
+            if (res.getAttribute('value') == 'Best') {
+              final votes = int.tryParse(res.getAttribute('numvotes') ?? '0') ?? 0;
+              if (votes >= 3) { // modest threshold so "Best" has signal
+                if (!bestPlayers.contains(np)) bestPlayers.add(np);
+              }
+            }
+          }
+        }
+      }
+    }
+    bestPlayers.sort();
+
     return Game(
       id: id,
       name: primaryName,
@@ -277,6 +298,7 @@ class BggService {
       categories: cats,
       mechanics: mechs,
       expansions: exps,
+      bestPlayerCounts: bestPlayers,
     );
   }
 
