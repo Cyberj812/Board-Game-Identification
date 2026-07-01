@@ -47,6 +47,13 @@ jobs:
           channel: 'stable'
           cache: true
 
+      - name: Install higher Android SDK platforms (for plugin compatibility e.g. API 35+ BAKLAVA in sqflite etc)
+        run: |
+          export ANDROID_HOME=/usr/local/lib/android/sdk
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-34" "platforms;android-35" "platforms;android-36" "build-tools;35.0.0" "build-tools;36.0.0" || true
+        shell: bash
+
       - name: Get Flutter dependencies
         run: flutter pub get
         working-directory: mobile
