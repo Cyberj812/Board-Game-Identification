@@ -21,44 +21,23 @@ subprojects {
     // exactly when the Android plugin is applied (avoids afterEvaluate timing/"already evaluated" errors).
     // Reflection used to avoid static type resolution issues in KTS.
     plugins.withId("com.android.library") {
-        val androidExt = extensions.findByName("android")
-        if (androidExt != null) {
-            try {
-                val getNamespace = androidExt.javaClass.getMethod("getNamespace")
-                val setNamespace = androidExt.javaClass.getMethod("setNamespace", String::class.java)
-                if (getNamespace.invoke(androidExt) == null) {
-                    val ns = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
-                    setNamespace.invoke(androidExt, ns)
-                }
-            } catch (_: Exception) {}
-            // Force compileSdk >=34 for plugins pulling newer androidx (e.g. network_info_plus + fragment 1.7+)
-            try {
-                val m = androidExt.javaClass.methods.firstOrNull { it.name == "setCompileSdkVersion" || it.name == "setCompileSdk" }
-                if (m != null && m.parameterTypes.isNotEmpty()) {
-                    val arg = if (m.parameterTypes[0] == Int::class.java) 34 else "34"
-                    m.invoke(androidExt, arg)
-                }
-            } catch (_: Exception) {}
+        android {
+            // Force a high enough compileSdk for plugins (network_info_plus etc) that declare 33
+            // but transitives like androidx.fragment 1.7 require 34+.
+            compileSdk = 35
+            @Suppress("DEPRECATION")
+            if (namespace == null) {
+                namespace = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
+            }
         }
     }
     plugins.withId("com.android.application") {
-        val androidExt = extensions.findByName("android")
-        if (androidExt != null) {
-            try {
-                val getNamespace = androidExt.javaClass.getMethod("getNamespace")
-                val setNamespace = androidExt.javaClass.getMethod("setNamespace", String::class.java)
-                if (getNamespace.invoke(androidExt) == null) {
-                    val ns = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
-                    setNamespace.invoke(androidExt, ns)
-                }
-            } catch (_: Exception) {}
-            try {
-                val m = androidExt.javaClass.methods.firstOrNull { it.name == "setCompileSdkVersion" || it.name == "setCompileSdk" }
-                if (m != null && m.parameterTypes.isNotEmpty()) {
-                    val arg = if (m.parameterTypes[0] == Int::class.java) 34 else "34"
-                    m.invoke(androidExt, arg)
-                }
-            } catch (_: Exception) {}
+        android {
+            compileSdk = 35
+            @Suppress("DEPRECATION")
+            if (namespace == null) {
+                namespace = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
+            }
         }
     }
 }
