@@ -31,6 +31,14 @@ subprojects {
                     setNamespace.invoke(androidExt, ns)
                 }
             } catch (_: Exception) {}
+            // Force compileSdk >=34 for plugins pulling newer androidx (e.g. network_info_plus + fragment 1.7+)
+            try {
+                val m = androidExt.javaClass.methods.firstOrNull { it.name == "setCompileSdkVersion" || it.name == "setCompileSdk" }
+                if (m != null && m.parameterTypes.isNotEmpty()) {
+                    val arg = if (m.parameterTypes[0] == Int::class.java) 34 else "34"
+                    m.invoke(androidExt, arg)
+                }
+            } catch (_: Exception) {}
         }
     }
     plugins.withId("com.android.application") {
@@ -42,6 +50,13 @@ subprojects {
                 if (getNamespace.invoke(androidExt) == null) {
                     val ns = "com.cyberj812.boardgamesnap.${project.name.replace(":", ".")}"
                     setNamespace.invoke(androidExt, ns)
+                }
+            } catch (_: Exception) {}
+            try {
+                val m = androidExt.javaClass.methods.firstOrNull { it.name == "setCompileSdkVersion" || it.name == "setCompileSdk" }
+                if (m != null && m.parameterTypes.isNotEmpty()) {
+                    val arg = if (m.parameterTypes[0] == Int::class.java) 34 else "34"
+                    m.invoke(androidExt, arg)
                 }
             } catch (_: Exception) {}
         }
