@@ -58,7 +58,7 @@ jobs:
         run: flutter pub get
         working-directory: mobile
 
-      - name: Patch plugin compileSdk to 35 (androidx aarMetadata fix for network_info_plus, pdfx etc.)
+      - name: Patch plugin compileSdk to 35 (androidx aarMetadata fix for network_info_plus, pdfx etc.) + sqflite BAKLAVA/preview API source compat
         run: |
           set -x
           # Find the actual pub cache location (usually ~/.pub-cache or $PUB_CACHE)
@@ -72,8 +72,18 @@ jobs:
           # Handle flutter. references by replacing with 35
           find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/flutter\.compileSdkVersion/35/g' {} + || true
           find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/flutter\.compileSdkVersion/35/g' {} + || true
+
+          # Patch sqflite_android Java source: replace preview BAKLAVA const + new APIs (Locale.of, Thread.threadId)
+          # with numeric 35 + compatible old APIs so it compiles against stable android-35 platform on CI runners.
+          find "$PUB_CACHE_DIR" -path '*sqflite_android*/android/src/main/java/*/Utils.java' -exec sed -i 's/Build\.VERSION_CODES\.BAKLAVA/35/g' {} + || true
+          find "$PUB_CACHE_DIR" -path '*sqflite_android*/android/src/main/java/*/Utils.java' -exec sed -i 's/Locale\.of(/new Locale(/g' {} + || true
+          find "$PUB_CACHE_DIR" -path '*sqflite_android*/android/src/main/java/*/Utils.java' -exec sed -i 's/\.threadId()/.getId()/g' {} + || true
+
           echo "=== Patched samples (network_info_plus focus) ==="
           find "$PUB_CACHE_DIR" -path '*network_info_plus*/android/build.gradle' -o -path '*network_info_plus*/android/build.gradle.kts' 2>/dev/null | head -3 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
+          echo "=== sqflite patch verification ==="
+          find "$PUB_CACHE_DIR" -path '*sqflite_android*/android/build.gradle' 2>/dev/null | head -1 | xargs -I {} sh -c 'echo "----- sq build.gradle compileSdk -----"; grep -E "compileSdk" {} || true' || true
+          find "$PUB_CACHE_DIR" -path '*sqflite_android*/android/src/main/java/*/Utils.java' 2>/dev/null | head -1 | xargs -I {} sh -c 'echo "----- sq Utils.java BAKLAVA/Locale/thread -----"; grep -E "BAKLAVA|Locale\.|threadId|\.getId\(\)" {} || true' || true
           echo "=== General samples ==="
           find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle' 2>/dev/null | head -2 | xargs -I {} sh -c 'echo "----- {} -----"; grep -E "compileSdk" {} || true' || true
         working-directory: mobile
