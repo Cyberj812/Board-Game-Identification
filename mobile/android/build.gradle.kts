@@ -20,15 +20,22 @@ subprojects {
 }
 
 // Workaround for plugins that don't declare 'namespace' (required by AGP 8+).
-// This forces a namespace on library subprojects (like flutter_secure_storage) that use
-// conditional namespace setting.
+// Uses safe Project receiver methods + runtime reflection (no static AGP types)
+// so that Kotlin DSL script compilation does not fail with unresolved refs.
 subprojects {
     afterEvaluate {
-        if (it.hasProperty("android")) {
-            it.android {
-                @Suppress("DEPRECATION")
-                if (namespace == null) {
-                    namespace = "com.cyberj812.boardgamesnap.${it.name.replace(":", ".")}"
+        if (hasProperty("android")) {
+            val androidExt = extensions.findByName("android")
+            if (androidExt != null) {
+                try {
+                    val getNamespace = androidExt.javaClass.getMethod("getNamespace")
+                    val setNamespace = androidExt.javaClass.getMethod("setNamespace", String::class.java)
+                    if (getNamespace.invoke(androidExt) == null) {
+                        val ns = "com.cyberj812.boardgamesnap.${name.replace(":", ".")}"
+                        setNamespace.invoke(androidExt, ns)
+                    }
+                } catch (_: Exception) {
+                    // best effort; ignore if the extension shape differs
                 }
             }
         }
