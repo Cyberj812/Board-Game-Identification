@@ -185,6 +185,7 @@ jobs:
       - name: Create Android Release
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
         with:
           tag_name: v${{ github.run_number }}-debug
           name: BoardGameSnap Android Debug (build ${{ github.run_number }})
@@ -264,6 +265,7 @@ jobs:
       - name: Create iOS Release
         uses: softprops/action-gh-release@v2
         if: github.event_name == 'workflow_dispatch'
+        continue-on-error: true
         with:
           tag_name: v${{ github.run_number }}-ios
           name: BoardGameSnap iOS (unsigned IPA, build ${{ github.run_number }})
