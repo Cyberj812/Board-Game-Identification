@@ -14,15 +14,13 @@ rootProject.layout.buildDirectory.value(newBuildDir)
 subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
-}
-subprojects {
-    project.evaluationDependsOn(":app")
-}
 
-// Workaround for plugins that don't declare 'namespace' (required by AGP 8+).
-// Uses safe Project receiver methods + runtime reflection (no static AGP types)
-// so that Kotlin DSL script compilation does not fail with unresolved refs.
-subprojects {
+    project.evaluationDependsOn(":app")
+
+    // Workaround for plugins that don't declare 'namespace' (required by AGP 8+).
+    // Registered early in the same subprojects configure pass to avoid
+    // "Cannot run Project.afterEvaluate when the project is already evaluated."
+    // Uses receiver methods + reflection to keep KTS compilation happy.
     afterEvaluate {
         if (hasProperty("android")) {
             val androidExt = extensions.findByName("android")
@@ -35,7 +33,7 @@ subprojects {
                         setNamespace.invoke(androidExt, ns)
                     }
                 } catch (_: Exception) {
-                    // best effort; ignore if the extension shape differs
+                    // best effort
                 }
             }
         }
