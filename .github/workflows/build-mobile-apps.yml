@@ -58,10 +58,11 @@ jobs:
           PUB_CACHE_DIR="${PUB_CACHE:-$HOME/.pub-cache}"
           echo "Using pub cache dir: $PUB_CACHE_DIR"
           # Aggressively force compileSdk 35 in all plugin android build files.
-          find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/.*compileSdk.*/compileSdk 35/' {} + || true
-          find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/.*compileSdkVersion.*/compileSdkVersion 35/' {} + || true
-          find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/.*compileSdk.*/compileSdk = 35/' {} + || true
-          # Handle flutter. references
+          # Preserve the original property name (compileSdkVersion or compileSdk) to ensure setting takes effect.
+          find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/\(compileSdkVersion\)\s*.*/\1 35/' {} + || true
+          find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/\(compileSdk\)\s*=.*/\1 = 35/' {} + || true
+          find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/\(compileSdk\)\s*=.*/\1 = 35/' {} + || true
+          # Handle flutter. references by replacing with 35
           find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle' -exec sed -i 's/flutter\.compileSdkVersion/35/g' {} + || true
           find "$PUB_CACHE_DIR" -path '*/hosted/pub.dev/*/android/build.gradle.kts' -exec sed -i 's/flutter\.compileSdkVersion/35/g' {} + || true
           echo "=== Patched samples (network_info_plus focus) ==="
