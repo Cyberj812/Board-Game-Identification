@@ -235,7 +235,14 @@ jobs:
       - name: Pod install
         run: |
           cd ios
-          pod install --repo-update
+          for attempt in 1 2 3; do
+            echo "Pod install attempt $attempt..."
+            pod install --repo-update && break || {
+              echo "Pod install failed on attempt $attempt. Retrying after cleanup..."
+              pod repo update || true
+              sleep 30
+            }
+          done
         working-directory: mobile
 
       - name: Build iOS (release, no codesign)
